@@ -4,6 +4,8 @@ from .models import Usuario
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import AuthenticationFailed
 
+from rest_framework.permissions import BasePermission
+
 
 class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
@@ -39,9 +41,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
 
 class LoginSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        
-        print("ESTOY EN EL LOGIN")
-        
+                
         data = super().validate(attrs)
         
         usuario = self.user
@@ -65,4 +65,11 @@ class LoginSerializer(TokenObtainPairSerializer):
                     }
                 }
             }
+class IsAdmin(BasePermission):
     
+    def has_permission(self, request, view):
+        
+        return (
+            request.user.is_authenticated
+            and request.user.rol == 1
+        )

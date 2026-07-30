@@ -1,20 +1,60 @@
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
+from rest_framework_simplejwt.views import TokenRefreshView
 
-from rest_framework_simplejwt.views import TokenBlacklistView
-
-from usuarios.views import LoginView, MeView
 
 from usuarios.views import LoginView, MeView, LogoutView
+
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     
-    path("api/", include("usuarios.urls")),
+    # Modulos
+    
+    path("api/",
+            include("usuarios.urls")),
+    
+    
+    path("api/",
+         include("categorias.urls")),
+    
+    path("api/",
+         include("productos.urls")),
+    
+    path("api/",
+        include("variantes.urls")
+    ),
+    
+    path(
+    "api/",
+    include("inventario.urls")
+    ),
+    
+    path(
+        "api/",
+        include("empresa.urls")
+    ),
+    
+    path("api/",
+         include("metodos_pago.urls")
+    ),
+    
+    path("api/",
+         include("cajas.urls")),
+    
+    path("api/",
+         include("corte_caja.urls")),
+    
+    path("api/",
+        include("ventas.urls")),
+    
+    path("api/",
+        include("detalle_venta.urls")),
+    
+    
+    
+    # Autenticación
     
     path(
         "api/auth/login/",
@@ -25,7 +65,7 @@ urlpatterns = [
     path(
         "api/auth/refresh/",
         TokenRefreshView.as_view(),
-        name="token_obtain_pair"
+        name="token_refresh"
     ),
     
     path(
@@ -39,4 +79,6 @@ urlpatterns = [
         MeView.as_view(),
         name="auth_me"
     )
+    
+    
 ]

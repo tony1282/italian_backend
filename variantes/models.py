@@ -1,0 +1,81 @@
+from django.db import models
+import uuid
+
+from productos.models import Producto
+
+
+class Variante(models.Model):
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name="variantes"
+    )
+
+    codigo_barras = models.CharField(
+        max_length=100,
+        unique=True
+    )
+
+    sku = models.CharField(
+        max_length=100,
+        unique=True
+    )
+
+    nombre = models.CharField(
+        max_length=150
+    )
+
+    stock = models.PositiveIntegerField(
+        default=0
+    )
+
+    stock_minimo = models.PositiveIntegerField(
+        default=0
+    )
+
+    costo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0
+    )
+
+    precio_menudeo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00
+    )
+
+    precio_mayoreo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0.00
+    )
+
+    garantia_meses = models.PositiveIntegerField(
+        null=True,
+        blank=True
+    )
+
+    activo = models.BooleanField(
+        default=True
+    )
+
+    fecha_creacion = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    fecha_actualizacion = models.DateTimeField(
+        auto_now=True
+    )
+
+    def __str__(self):
+        return f"{self.producto.nombre} - {self.nombre}"
+    
+    

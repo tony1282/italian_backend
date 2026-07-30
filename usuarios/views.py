@@ -13,16 +13,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from rest_framework_simplejwt.tokens import RefreshToken
+from .permissions import IsAdmin
 
 
 
 class UsuarioViewSet(viewsets.ModelViewSet):
 
-    queryset = Usuario.objects.all()
+    queryset = Usuario.objects.filter(activo=True)
 
     serializer_class = UsuarioSerializer
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [
+        IsAuthenticated,
+        IsAdmin
+    ]
 
     def destroy(self, request, *args, **kwargs):
 
@@ -33,7 +37,8 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         return Response(
             {
-                "mensaje": "Usuario desactivado correctamente"
+                "success": True,
+                "message": "Usuario desactivado correctamente"
             },
             status=status.HTTP_200_OK
         )
@@ -80,11 +85,15 @@ class MeView(APIView):
     def get(self, request):
         usuario = request.user
         
-        return  Response ({
-            "id": usuario.id,
-            "nombre": usuario.nombre,
-            "rol": usuario.rol,
-            
-            }            
-        )
+        return  Response (
+            {
+                "success": True,
+                "data": {
+                    "id": usuario.id,
+                    "nombre": usuario.nombre,
+                    "rol": usuario.rol,
+                }
+            },
+            status=status.HTTP_200_OK            
+        ) 
         
