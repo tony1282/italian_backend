@@ -2,8 +2,11 @@ from rest_framework import viewsets, status
 from rest_framework.response import Response
 
 from .models import Usuario
-from .serializers import UsuarioSerializer
-from .serializers import LoginSerializer
+from .serializers import (
+    UsuarioSerializer,
+    LoginSerializer,
+    RefreshSerializer
+)
 
 
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -13,6 +16,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from rest_framework_simplejwt.views import TokenRefreshView
+
+
 from .permissions import IsAdmin
 
 
@@ -97,3 +104,5 @@ class MeView(APIView):
             status=status.HTTP_200_OK            
         ) 
         
+class RefreshView(TokenRefreshView):
+    serializer_class = RefreshSerializer

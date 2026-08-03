@@ -1,9 +1,13 @@
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import TokenRefreshView
+from usuarios.views import RefreshView
 
-
-from usuarios.views import LoginView, MeView, LogoutView
+from usuarios.views import (
+    LoginView,
+    LogoutView,
+    MeView,
+    RefreshView
+)
 
 
 
@@ -52,6 +56,10 @@ urlpatterns = [
     path("api/",
         include("detalle_venta.urls")),
     
+    path(
+        "api/",
+        include("tickets.urls")
+    ),
     
     
     # Autenticación
@@ -64,7 +72,7 @@ urlpatterns = [
     
     path(
         "api/auth/refresh/",
-        TokenRefreshView.as_view(),
+        RefreshView.as_view(),
         name="token_refresh"
     ),
     

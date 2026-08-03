@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from datetime import timedelta
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +30,18 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG") == "True"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "chaste-fastness-overtake.ngrok-free.dev",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://chaste-fastness-overtake.ngrok-free.dev",
+]
+
+CORS_ALLOW_ALL_ORIGINS = True
+
 
 
 # Application definition
@@ -45,6 +58,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     
+    'corsheaders',
+    
     'usuarios',
     'categorias',
     'productos',
@@ -56,6 +71,7 @@ INSTALLED_APPS = [
     'corte_caja',
     'ventas',
     'detalle_venta',
+    'tickets',
     
 ]
 
@@ -65,7 +81,20 @@ REST_FRAMEWORK = {
     ),
 }
 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME" : timedelta(hours=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    
+    "ROTATE_REFRESH_TOKENS": True,
+    
+    "BLACKLIST_AFTER_ROTATION": True
+    
+}
+
 MIDDLEWARE = [
+    
+    'corsheaders.middleware.CorsMiddleware',
+    
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -147,3 +176,4 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
+

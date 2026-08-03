@@ -6,6 +6,9 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from rest_framework.permissions import BasePermission
 
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+
+
 
 class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
@@ -65,11 +68,23 @@ class LoginSerializer(TokenObtainPairSerializer):
                     }
                 }
             }
-class IsAdmin(BasePermission):
-    
-    def has_permission(self, request, view):
+
         
-        return (
-            request.user.is_authenticated
-            and request.user.rol == 1
-        )
+        
+class RefreshSerializer(TokenRefreshSerializer):
+
+    def validate(self, attrs):
+
+        data = super().validate(attrs)
+
+        response = {
+            "success": True,
+            "data": {
+                "access": data["access"]
+            }
+        }
+
+        if "refresh" in data:
+            response["data"]["refresh"] = data["refresh"]
+
+        return response
