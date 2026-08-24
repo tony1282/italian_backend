@@ -12,7 +12,7 @@ class MetodoPagoView(APIView):
 
 
     # GET /api/metodos-pago/
-    # Lista todos los métodos (activos e inactivos)
+    # Lista todos los métodos
 
     def get(self, request):
 
@@ -33,60 +33,24 @@ class MetodoPagoView(APIView):
 
 
     # POST /api/metodos-pago/
-    # Crear método de pago
+    # Los métodos son fijos
 
     def post(self, request):
 
-        nombre = request.data.get("nombre")
-
-
-        if MetodoPago.objects.filter(
-            nombre__iexact=nombre
-        ).exists():
-
-            return Response(
-                {
-                    "success": False,
-                    "message": "Ya existe un método de pago con ese nombre."
-                },
-                status=status.HTTP_409_CONFLICT
-            )
-
-
-        serializer = MetodoPagoSerializer(
-            data=request.data
-        )
-
-
-        if not serializer.is_valid():
-
-            return Response(
-                {
-                    "success": False,
-                    "errors": serializer.errors
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-
-        metodo = serializer.save()
-
-
         return Response(
             {
-                "success": True,
-                "message": "Método de pago creado correctamente.",
-                "data": {
-                    "id": metodo.id
-                }
+                "success": False,
+                "message": (
+                    "Los métodos de pago son fijos "
+                    "y no pueden crearse."
+                )
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
         )
-
 
 
     # PUT /api/metodos-pago/{id}/
-    # Actualizar nombre o estado
+    # Solamente permite activar/desactivar
 
     def put(self, request, id):
 
@@ -101,67 +65,78 @@ class MetodoPagoView(APIView):
             return Response(
                 {
                     "success": False,
-                    "message": "Método de pago no encontrado."
+                    "message": (
+                        "Método de pago no encontrado."
+                    )
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
 
 
-        nuevo_nombre = request.data.get(
-            "nombre",
-            metodo.nombre
-        )
+        campos_permitidos = [
+            "activo"
+        ]
 
 
-        if MetodoPago.objects.filter(
-            nombre__iexact=nuevo_nombre
-        ).exclude(
-            id=id
-        ).exists():
+        for campo in request.data:
 
-            return Response(
-                {
-                    "success": False,
-                    "message": "Ya existe un método de pago con ese nombre."
-                },
-                status=status.HTTP_409_CONFLICT
-            )
+            if campo not in campos_permitidos:
 
-
-        serializer = MetodoPagoSerializer(
-            metodo,
-            data=request.data,
-            partial=True
-        )
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            f"El campo '{campo}' "
+                            "no puede modificarse."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
 
-        if not serializer.is_valid():
+        if "activo" not in request.data:
 
             return Response(
                 {
                     "success": False,
-                    "errors": serializer.errors
+                    "message": (
+                        "Debe indicar el estado "
+                        "activo del método."
+                    )
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
 
-        serializer.save()
+        metodo.activo = request.data["activo"]
+
+        metodo.save(
+            update_fields=[
+                "activo",
+                "fecha_actualizacion"
+            ]
+        )
+
+
+        serializer = MetodoPagoSerializer(
+            metodo
+        )
 
 
         return Response(
             {
                 "success": True,
-                "message": "Método de pago actualizado correctamente.",
+                "message": (
+                    "Método de pago actualizado correctamente."
+                ),
                 "data": serializer.data
             },
             status=status.HTTP_200_OK
         )
 
 
-
     # DELETE /api/metodos-pago/{id}/
-    # Eliminación lógica
+    # Desactivar método
 
     def delete(self, request, id):
 
@@ -171,30 +146,38 @@ class MetodoPagoView(APIView):
                 id=id
             )
 
-
         except MetodoPago.DoesNotExist:
 
             return Response(
                 {
                     "success": False,
-                    "message": "Método de pago no encontrado."
+                    "message": (
+                        "Método de pago no encontrado."
+                    )
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
 
 
         metodo.activo = False
-        metodo.save()
+
+        metodo.save(
+            update_fields=[
+                "activo",
+                "fecha_actualizacion"
+            ]
+        )
 
 
         return Response(
             {
                 "success": True,
-                "message": "Método de pago desactivado correctamente."
+                "message": (
+                    "Método de pago desactivado correctamente."
+                )
             },
             status=status.HTTP_200_OK
         )
-
 
 
 class MetodoPagoActivoView(APIView):

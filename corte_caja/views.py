@@ -15,9 +15,9 @@ from django.utils import timezone
 from django.db import transaction
 
 
-from .models import CorteCaja
+from .models import CorteCaja, MovimientoCaja
 
-from .serializers import CorteCajaSerializer
+from .serializers import (CorteCajaSerializer, MovimientoCajaSerializer)
 
 from cajas.models import Caja
 
@@ -376,4 +376,34 @@ class CorteCajaViewSet(
                 "success":True,
                 "data":serializer.data
             }
+        )
+        
+    
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="movimientos"
+    )
+    def movimiento(self, request, pk=None):
+
+
+        corte = self.get_object()
+        
+        movimientos = MovimientoCaja.objects.filter(
+            corte_caja=corte
+        ).order_by(
+            "-fecha"
+        )
+        
+        serializer = MovimientoCajaSerializer(
+            movimientos,
+            many=True
+        )
+        
+        return Response(
+            {
+                "success":True,
+                "data":serializer.data
+            },
+            status=status.HTTP_200_OK
         )

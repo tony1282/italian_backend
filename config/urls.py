@@ -57,9 +57,16 @@ urlpatterns = [
         include("detalle_venta.urls")),
     
     path(
-        "api/",
-        include("tickets.urls")
-    ),
+          "api/",
+          include("tickets.urls")
+      ),
+    
+     path(
+              "api/",
+              include("devoluciones.urls")
+          ),
+    
+    
     
     
     # Autenticación

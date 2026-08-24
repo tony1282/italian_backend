@@ -6,6 +6,7 @@ from .models import Caja
 from .serializers import CajaSerializer
 
 
+
 class CajaViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,

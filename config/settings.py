@@ -33,11 +33,11 @@ DEBUG = os.getenv("DEBUG") == "True"
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "chaste-fastness-overtake.ngrok-free.dev",
+    "toronto-katrina-care-pharmacy.trycloudflare.com",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://chaste-fastness-overtake.ngrok-free.dev",
+    "https://toronto-katrina-care-pharmacy.trycloudflare.com",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'ventas',
     'detalle_venta',
     'tickets',
+    'devoluciones'
     
 ]
 

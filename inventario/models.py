@@ -11,6 +11,9 @@ class MovimientoInventario(models.Model):
         ("ENTRADA", "Entrada"),
         ("SALIDA", "Salida"),
         ("AJUSTE", "Ajuste"),
+        ("DEVOLUCION", "Devolución"),
+        ("GARANTIA", "Garantía"),
+        ("CAMBIO_PRODUCTO", "Cambio de producto"),
     ]
 
     id = models.UUIDField(
