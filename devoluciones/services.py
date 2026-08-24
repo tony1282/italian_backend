@@ -17,6 +17,7 @@ from .models import (
     DetalleDevolucion
 )
 
+from variantes.models import Variante
 
 @transaction.atomic
 def crear_devolucion(
@@ -265,9 +266,23 @@ def aprobar_devolucion(
         )
 
 
-    # 3. Obtener venta
+    # 3. Buscar y bloquear la venta
 
-    venta = devolucion.venta
+    try:
+
+        venta = (
+            Venta.objects
+            .select_for_update()
+            .get(
+                id=devolucion.venta_id
+            )
+        )
+
+    except Venta.DoesNotExist:
+
+        raise Exception(
+            "La venta asociada no existe."
+        )
 
 
     # 4. Validar venta
@@ -296,8 +311,7 @@ def aprobar_devolucion(
 
     detalles = list(
         devolucion.detalles.select_related(
-            "detalle_venta",
-            "detalle_venta__variante"
+            "detalle_venta"
         )
     )
 
@@ -315,7 +329,6 @@ def aprobar_devolucion(
 
         detalle_venta = detalle.detalle_venta
 
-
         cantidad_aprobada = (
             DetalleDevolucion.objects
             .filter(
@@ -328,13 +341,10 @@ def aprobar_devolucion(
             or 0
         )
 
-
         disponible = (
             detalle_venta.cantidad
-            -
-            cantidad_aprobada
+            - cantidad_aprobada
         )
-
 
         if detalle.cantidad > disponible:
 
@@ -344,11 +354,10 @@ def aprobar_devolucion(
             )
 
 
-    # 8. Buscar corte abierto
-    #    únicamente para reembolsos en efectivo
+    # 8. Buscar corte abierto de la MISMA CAJA
+    #    únicamente si el reembolso es efectivo
 
     corte = None
-
 
     if metodo_pago.nombre == "EFECTIVO":
 
@@ -356,11 +365,11 @@ def aprobar_devolucion(
             CorteCaja.objects
             .select_for_update()
             .filter(
+                caja=venta.corte_caja.caja,
                 fecha_fin__isnull=True
             )
             .first()
         )
-
 
         if not corte:
 
@@ -376,9 +385,16 @@ def aprobar_devolucion(
 
         detalle_venta = detalle.detalle_venta
 
-        variante = detalle_venta.variante
+        # Bloquear variante
+        variante = (
+            Variante.objects
+            .select_for_update()
+            .get(
+                id=detalle_venta.variante_id
+            )
+        )
 
-
+        # Reponer stock
         variante.stock += detalle.cantidad
 
         variante.save(
@@ -388,7 +404,7 @@ def aprobar_devolucion(
         )
 
 
-        # Registrar movimiento
+        # Registrar movimiento de inventario
 
         MovimientoInventario.objects.create(
 
@@ -407,7 +423,7 @@ def aprobar_devolucion(
 
 
     # 10. Registrar reembolso en caja
-    #     únicamente para EFECTIVO
+    #     únicamente para efectivo
 
     if metodo_pago.nombre == "EFECTIVO":
 
@@ -432,7 +448,7 @@ def aprobar_devolucion(
         )
 
 
-    # 11. Cambiar estado de devolución
+    # 11. Aprobar devolución
 
     devolucion.estado = "APROBADA"
 
@@ -443,14 +459,11 @@ def aprobar_devolucion(
     )
 
 
-    # 12. Determinar si la venta quedó
-    #     completamente devuelta
+    # 12. Determinar si toda la venta fue devuelta
 
     venta_completamente_devuelta = True
 
-
     detalles_venta = venta.detalles.all()
-
 
     for detalle_venta in detalles_venta:
 
@@ -466,7 +479,6 @@ def aprobar_devolucion(
             or 0
         )
 
-
         if cantidad_devuelta < detalle_venta.cantidad:
 
             venta_completamente_devuelta = False
@@ -474,7 +486,7 @@ def aprobar_devolucion(
             break
 
 
-    # 13. Actualizar venta
+    # 13. Actualizar estado de venta
 
     if venta_completamente_devuelta:
 
@@ -488,6 +500,7 @@ def aprobar_devolucion(
 
 
     return devolucion
+
 
 @transaction.atomic
 def cambiar_estado_devolucion(
@@ -509,30 +522,23 @@ def cambiar_estado_devolucion(
         )
 
 
-    # Solo se puede modificar una devolución pendiente
-
     if devolucion.estado != "PENDIENTE":
 
         raise Exception(
-            "Solo se pueden modificar devoluciones pendientes."
+            "Solo se pueden modificar "
+            "devoluciones pendientes."
         )
 
 
-    # Validar estado solicitado
-
-    if nuevo_estado not in [
-        "APROBADA",
-        "RECHAZADA"
-    ]:
+    if nuevo_estado != "RECHAZADA":
 
         raise Exception(
-            "Estado de devolución no válido."
+            "Para aprobar una devolución "
+            "debe utilizarse el proceso de aprobación."
         )
 
 
-    # Cambiar estado
-
-    devolucion.estado = nuevo_estado
+    devolucion.estado = "RECHAZADA"
 
     devolucion.save(
         update_fields=[
@@ -542,4 +548,3 @@ def cambiar_estado_devolucion(
 
 
     return devolucion
-

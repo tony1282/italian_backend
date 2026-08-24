@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import (
     mixins,
     viewsets,
@@ -13,6 +15,10 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 
 from django.db import transaction
+
+from django.db.models import Sum
+
+from ventas.models import Venta
 
 
 from .models import CorteCaja, MovimientoCaja
@@ -220,26 +226,32 @@ class CorteCajaViewSet(
 
 
 
-        # Pendiente conectar con Venta y Devoluciones
+        total_ventas_efectivo = (
+            Venta.objects
+            .filter(
+                corte_caja=corte,
+                metodo_pago__nombre="EFECTIVO",
+                estado="COMPLETADA"
+            )
+            .aggregate(total=Sum("total"))["total"]
+            or Decimal("0.00")
+        )
 
-        total_ventas_efectivo = 0
-
-        total_reembolsos_efectivo = 0
-
-
+        total_reembolsos_efectivo = (
+            MovimientoCaja.objects
+            .filter(
+                corte_caja=corte,
+                metodo_pago__nombre="EFECTIVO",
+                tipo="REEMBOLSO"
+            )
+            .aggregate(total=Sum("monto"))["total"]
+            or Decimal("0.00")
+        )
 
         efectivo_esperado = (
-
-            corte.efectivo_inicial
-
-            +
-
-            total_ventas_efectivo
-
-            -
-
-            total_reembolsos_efectivo
-
+            Decimal(str(corte.efectivo_inicial))
+            + Decimal(str(total_ventas_efectivo))
+            - Decimal(str(total_reembolsos_efectivo))
         )
 
 
@@ -299,7 +311,7 @@ class CorteCajaViewSet(
 
 
 
-    # GET /api/caja/corte/activo/
+    # GET /api/caja/corte/activo/?caja_id=<UUID>
 
     @action(
         detail=False,
@@ -308,38 +320,39 @@ class CorteCajaViewSet(
     )
     def activo(self, request):
 
+        caja_id = request.query_params.get("caja_id")
+
+        if not caja_id:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "El parámetro caja_id es obligatorio."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         corte = CorteCaja.objects.filter(
-
+            caja_id=caja_id,
             fecha_fin__isnull=True
-
         ).first()
-
-
 
         if not corte:
 
             return Response(
                 {
-                    "success":False,
-
-                    "message":
-                    "No existe un corte abierto."
+                    "success": False,
+                    "message": "No existe un corte abierto para esta caja."
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
 
-
-
-        serializer = self.get_serializer(
-            corte
-        )
-
+        serializer = self.get_serializer(corte)
 
         return Response(
             {
-                "success":True,
-                "data":serializer.data
+                "success": True,
+                "data": serializer.data
             }
         )
 
