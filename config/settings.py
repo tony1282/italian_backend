@@ -72,7 +72,8 @@ INSTALLED_APPS = [
     'ventas',
     'detalle_venta',
     'tickets',
-    'devoluciones'
+    'devoluciones',
+    'garantias',
     
 ]
 

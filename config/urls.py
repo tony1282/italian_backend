@@ -61,10 +61,15 @@ urlpatterns = [
           include("tickets.urls")
       ),
     
-     path(
-              "api/",
-              include("devoluciones.urls")
-          ),
+    path(
+         "api/",
+         include("devoluciones.urls")
+     ),
+
+    path(
+         "api/",
+         include("garantias.urls")
+     ),
     
     
     
