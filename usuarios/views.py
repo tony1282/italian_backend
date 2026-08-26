@@ -1,30 +1,65 @@
-from rest_framework import viewsets, status
+from django.db import transaction
+
+from rest_framework import (
+    viewsets,
+    status
+)
+
 from rest_framework.response import Response
 
-from .models import Usuario
-from .serializers import (
-    UsuarioSerializer,
-    LoginSerializer,
-    RefreshSerializer
+from rest_framework.decorators import action
+
+from rest_framework.permissions import (
+    IsAuthenticated
 )
+
+from rest_framework.views import APIView
 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView
 )
 
-from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import (
+    RefreshToken
+)
 
-from rest_framework.views import APIView
+from rest_framework.throttling import (
+    AnonRateThrottle
+)
 
-from rest_framework_simplejwt.tokens import RefreshToken
+from .models import Usuario
+
+from .serializers import (
+    UsuarioSerializer,
+    CrearAdminSerializer,
+    LoginSerializer,
+    RefreshSerializer
+)
 
 from .permissions import IsAdmin
 
-from bitacora.services import registrar_bitacora
+from bitacora.services import (
+    registrar_bitacora
+)
 
 
-class UsuarioViewSet(viewsets.ModelViewSet):
+# ==============================================================
+# THROTTLE LOGIN
+# ==============================================================
+
+class LoginThrottle(AnonRateThrottle):
+
+    scope = "login"
+
+
+# ==============================================================
+# USUARIOS
+# ==============================================================
+
+class UsuarioViewSet(
+    viewsets.ModelViewSet
+):
 
     queryset = Usuario.objects.filter(
         activo=True
@@ -42,7 +77,64 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     # CREAR USUARIO
     # ==========================================================
 
-    def perform_create(self, serializer):
+    def create(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
+
+        serializer = self.get_serializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "No se pudo registrar el usuario."
+                    ),
+
+                    "data": serializer.errors
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+
+            self.perform_create(
+                serializer
+            )
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Usuario registrado correctamente."
+                ),
+
+                "data": None
+            },
+
+            status=status.HTTP_201_CREATED
+        )
+
+
+    # ==========================================================
+    # PERFORM CREATE
+    # ==========================================================
+
+    def perform_create(
+        self,
+        serializer
+    ):
 
         usuario = serializer.save()
 
@@ -65,10 +157,175 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
 
     # ==========================================================
+    # CREAR ADMINISTRADOR
+    # ==========================================================
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="crear-admin"
+    )
+    def crear_admin(
+        self,
+        request
+    ):
+
+        serializer = CrearAdminSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "No se pudo crear el administrador."
+                    ),
+
+                    "data": serializer.errors
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+
+            usuario = serializer.save()
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Usuarios",
+
+                accion="CREAR_ADMIN",
+
+                descripcion=(
+                    f"Administrador '{usuario.usuario}' "
+                    f"creado correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}."
+                )
+
+            )
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Administrador creado correctamente."
+                ),
+
+                "data": None
+            },
+
+            status=status.HTTP_201_CREATED
+        )
+
+
+    # ==========================================================
     # MODIFICAR USUARIO
     # ==========================================================
 
-    def perform_update(self, serializer):
+    def update(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
+
+        partial = kwargs.pop(
+            "partial",
+            False
+        )
+
+        instance = self.get_object()
+
+        # ------------------------------------------------------
+        # NO PERMITIR MODIFICAR ADMINISTRADORES
+        # ------------------------------------------------------
+
+        if instance.rol == 1:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "Los administradores "
+                        "no pueden modificarse desde "
+                        "este endpoint."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = self.get_serializer(
+
+            instance,
+
+            data=request.data,
+
+            partial=partial
+
+        )
+
+        if not serializer.is_valid():
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "No se pudo modificar el usuario."
+                    ),
+
+                    "data": serializer.errors
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+
+            self.perform_update(
+                serializer
+            )
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Usuario modificado correctamente."
+                ),
+
+                "data": None
+            },
+
+            status=status.HTTP_200_OK
+        )
+
+
+    # ==========================================================
+    # PERFORM UPDATE
+    # ==========================================================
+
+    def perform_update(
+        self,
+        serializer
+    ):
 
         usuario = serializer.save()
 
@@ -103,33 +360,97 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 
         usuario = self.get_object()
 
-        usuario.activo = False
-        usuario.save()
+        # ------------------------------------------------------
+        # AUTO-DESACTIVACIÓN
+        # ------------------------------------------------------
 
-        registrar_bitacora(
+        if usuario.id == request.user.id:
 
-            usuario=request.user,
+            return Response(
 
-            modulo="Usuarios",
+                {
+                    "success": False,
 
-            accion="DESACTIVAR_USUARIO",
+                    "message": (
+                        "No puedes desactivar "
+                        "tu propio usuario."
+                    ),
 
-            descripcion=(
-                f"Usuario '{usuario.usuario}' "
-                f"desactivado correctamente por "
-                f"{request.user.nombre} "
-                f"{request.user.apellido}."
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        )
+
+        # ------------------------------------------------------
+        # NO DESACTIVAR ADMINISTRADORES
+        # ------------------------------------------------------
+
+        if usuario.rol == 1:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "No puedes desactivar "
+                        "un administrador."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+
+        # ------------------------------------------------------
+        # DESACTIVACIÓN
+        # ------------------------------------------------------
+
+        with transaction.atomic():
+
+            usuario.activo = False
+
+            usuario.save(
+
+                update_fields=[
+                    "activo",
+                    "fecha_actualizacion"
+                ]
+
+            )
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Usuarios",
+
+                accion="DESACTIVAR_USUARIO",
+
+                descripcion=(
+                    f"Usuario '{usuario.usuario}' "
+                    f"desactivado correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}."
+                )
+
+            )
+
 
         return Response(
 
             {
                 "success": True,
+
                 "message": (
-                    "Usuario desactivado correctamente"
-                )
+                    "Usuario desactivado correctamente."
+                ),
+
+                "data": None
             },
 
             status=status.HTTP_200_OK
@@ -140,11 +461,27 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 # LOGIN
 # ==============================================================
 
-class LoginView(TokenObtainPairView):
+class LoginView(
+    TokenObtainPairView
+):
 
     serializer_class = LoginSerializer
 
-    def post(self, request, *args, **kwargs):
+    # ----------------------------------------------------------
+    # PROTECCIÓN CONTRA FUERZA BRUTA
+    # ----------------------------------------------------------
+
+    throttle_classes = [
+        LoginThrottle
+    ]
+
+
+    def post(
+        self,
+        request,
+        *args,
+        **kwargs
+    ):
 
         response = super().post(
             request,
@@ -152,7 +489,6 @@ class LoginView(TokenObtainPairView):
             **kwargs
         )
 
-        # Si el login fue exitoso
         if response.status_code == status.HTTP_200_OK:
 
             usuario_data = response.data.get(
@@ -180,7 +516,8 @@ class LoginView(TokenObtainPairView):
 
                         descripcion=(
                             f"Inicio de sesión exitoso "
-                            f"del usuario '{usuario.usuario}'."
+                            f"del usuario "
+                            f"'{usuario.usuario}'."
                         )
 
                     )
@@ -196,7 +533,9 @@ class LoginView(TokenObtainPairView):
 # LOGOUT
 # ==============================================================
 
-class LogoutView(APIView):
+class LogoutView(
+    APIView
+):
 
     permission_classes = [
         IsAuthenticated
@@ -207,18 +546,34 @@ class LogoutView(APIView):
         request
     ):
 
-        try:
+        refresh_token = request.data.get(
+            "refresh"
+        )
 
-            refresh_token = request.data[
-                "refresh"
-            ]
+        if not refresh_token:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "El refresh token es obligatorio."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
 
             token = RefreshToken(
                 refresh_token
             )
 
             token.blacklist()
-
 
             registrar_bitacora(
 
@@ -236,17 +591,20 @@ class LogoutView(APIView):
 
             )
 
-
             return Response(
 
                 {
                     "success": True,
-                    "message": "Sesión cerrada."
+
+                    "message": (
+                        "Sesión cerrada correctamente."
+                    ),
+
+                    "data": None
                 },
 
                 status=status.HTTP_200_OK
             )
-
 
         except Exception:
 
@@ -254,7 +612,12 @@ class LogoutView(APIView):
 
                 {
                     "success": False,
-                    "message": "Token inválido."
+
+                    "message": (
+                        "Token inválido."
+                    ),
+
+                    "data": None
                 },
 
                 status=status.HTTP_400_BAD_REQUEST
@@ -265,7 +628,9 @@ class LogoutView(APIView):
 # USUARIO AUTENTICADO
 # ==============================================================
 
-class MeView(APIView):
+class MeView(
+    APIView
+):
 
     permission_classes = [
         IsAuthenticated
@@ -283,9 +648,13 @@ class MeView(APIView):
             {
                 "success": True,
 
+                "message": (
+                    "Usuario obtenido correctamente."
+                ),
+
                 "data": {
 
-                    "id": usuario.id,
+                    "id": str(usuario.id),
 
                     "nombre": usuario.nombre,
 
@@ -310,6 +679,8 @@ class MeView(APIView):
 # REFRESH TOKEN
 # ==============================================================
 
-class RefreshView(TokenRefreshView):
+class RefreshView(
+    TokenRefreshView
+):
 
     serializer_class = RefreshSerializer

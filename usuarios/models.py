@@ -1,20 +1,37 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    PermissionsMixin,
+    BaseUserManager
+)
 
 import uuid
 
 
 class UsuarioManager(BaseUserManager):
 
-    def create_user(self, usuario, email, password=None, nombre="", apellido="", rol=2, activo=True):
+    def create_user(
+        self,
+        usuario,
+        email,
+        password=None,
+        nombre="",
+        apellido="",
+        rol=2,
+        activo=True
+    ):
 
         if not usuario:
-            raise ValueError("El usuario es obligatorio")
+            raise ValueError(
+                "El usuario es obligatorio"
+            )
 
         if not email:
-            raise ValueError("El correo es obligatorio")
+            raise ValueError(
+                "El correo es obligatorio"
+            )
 
-        usuario = usuario.lower()
+        usuario = usuario.strip().lower()
         email = self.normalize_email(email)
 
         user = self.model(
@@ -24,15 +41,27 @@ class UsuarioManager(BaseUserManager):
             email=email,
             rol=rol,
             activo=activo,
+            is_staff=(rol == 1),
+            is_superuser=(rol == 1),
         )
 
         user.set_password(password)
-        user.save(using=self._db)
+
+        user.save(
+            using=self._db
+        )
 
         return user
 
 
-    def create_superuser(self, usuario, email, password=None, nombre="", apellido=""):
+    def create_superuser(
+        self,
+        usuario,
+        email,
+        password=None,
+        nombre="",
+        apellido=""
+    ):
 
         user = self.create_user(
             usuario=usuario,
@@ -47,28 +76,40 @@ class UsuarioManager(BaseUserManager):
         user.is_staff = True
         user.is_superuser = True
 
-        user.save(using=self._db)
+        user.save(
+            using=self._db
+        )
 
         return user
 
 
+class Usuario(
+    AbstractBaseUser,
+    PermissionsMixin
+):
 
-class Usuario(AbstractBaseUser, PermissionsMixin):
-
-    # Configuración de autenticación Django
     objects = UsuarioManager()
 
     USERNAME_FIELD = "usuario"
-    REQUIRED_FIELDS = ["email"]
+
+    REQUIRED_FIELDS = [
+        "email"
+    ]
 
 
-    # Permisos Django
+    # ==========================================================
+    # PERMISOS DJANGO
+    # ==========================================================
+
     is_staff = models.BooleanField(
         default=False
     )
 
 
-    # Identificador
+    # ==========================================================
+    # IDENTIFICADOR
+    # ==========================================================
+
     id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
@@ -76,7 +117,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     )
 
 
-    # Información personal
+    # ==========================================================
+    # INFORMACIÓN PERSONAL
+    # ==========================================================
+
     nombre = models.CharField(
         max_length=100
     )
@@ -86,7 +130,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     )
 
 
-    # Datos de acceso
+    # ==========================================================
+    # DATOS DE ACCESO
+    # ==========================================================
+
     usuario = models.CharField(
         unique=True,
         max_length=50
@@ -98,7 +145,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     )
 
 
-    # Roles
+    # ==========================================================
+    # ROLES
+    # ==========================================================
+
     ROL_CHOICES = (
         (1, "admin"),
         (2, "empleado"),
@@ -110,7 +160,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     )
 
 
-    # Estado del usuario (eliminación lógica)
+    # ==========================================================
+    # ESTADO
+    # ==========================================================
+
     activo = models.BooleanField(
         default=True
     )
@@ -126,7 +179,10 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         self.activo = value
 
 
-    # Auditoría
+    # ==========================================================
+    # AUDITORÍA
+    # ==========================================================
+
     fecha_creacion = models.DateTimeField(
         auto_now_add=True
     )
@@ -136,6 +192,9 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     )
 
 
-    # Representación del objeto
+    # ==========================================================
+    # REPRESENTACIÓN
+    # ==========================================================
+
     def __str__(self):
         return self.usuario
