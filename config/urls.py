@@ -71,7 +71,15 @@ urlpatterns = [
          include("garantias.urls")
      ),
     
+    path(
+        "api/",
+        include("bitacora.urls")
+    ),
     
+    path(
+        "api/",
+        include("reportes.urls")
+    ),
     
     
     # Autenticación

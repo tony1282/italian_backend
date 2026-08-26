@@ -6,10 +6,14 @@ from rest_framework import status
 from .models import Empresa
 from .serializers import EmpresaSerializer
 
+from bitacora.services import registrar_bitacora
+
 
 class EmpresaView(APIView):
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [
+        IsAuthenticated
+    ]
 
 
     def get(self, request):
@@ -21,12 +25,17 @@ class EmpresaView(APIView):
             return Response(
                 {
                     "success": False,
-                    "message": "No hay configuración de empresa registrada."
+                    "message": (
+                        "No hay configuración de empresa "
+                        "registrada."
+                    )
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = EmpresaSerializer(empresa)
+        serializer = EmpresaSerializer(
+            empresa
+        )
 
         return Response(
             {
@@ -44,13 +53,18 @@ class EmpresaView(APIView):
             return Response(
                 {
                     "success": False,
-                    "message": "Ya existe una configuración de empresa. Use PUT para actualizar."
+                    "message": (
+                        "Ya existe una configuración de empresa. "
+                        "Use PUT para actualizar."
+                    )
                 },
                 status=status.HTTP_409_CONFLICT
             )
 
 
-        serializer = EmpresaSerializer(data=request.data)
+        serializer = EmpresaSerializer(
+            data=request.data
+        )
 
         if not serializer.is_valid():
 
@@ -66,11 +80,42 @@ class EmpresaView(APIView):
         empresa = serializer.save()
 
 
+        # ========================================================
+        # BITÁCORA
+        # ========================================================
+
+        registrar_bitacora(
+
+            usuario=request.user,
+
+            modulo="Empresa",
+
+            accion="CREAR_EMPRESA",
+
+            descripcion=(
+                f"Configuración de empresa "
+                f"'{empresa.nombre}' creada por "
+                f"{request.user.nombre} "
+                f"{request.user.apellido}. "
+                f"RFC: {empresa.rfc or 'No especificado'}. "
+                f"Días de devolución: "
+                f"{empresa.dias_devolucion}. "
+                f"IVA: {empresa.iva}%."
+            )
+
+        )
+
+
         return Response(
             {
                 "success": True,
-                "message": "Configuración de empresa guardada correctamente.",
-                "data": EmpresaSerializer(empresa).data
+                "message": (
+                    "Configuración de empresa "
+                    "guardada correctamente."
+                ),
+                "data": EmpresaSerializer(
+                    empresa
+                ).data
             },
             status=status.HTTP_201_CREATED
         )
@@ -86,7 +131,10 @@ class EmpresaView(APIView):
             return Response(
                 {
                     "success": False,
-                    "message": "No existe configuración de empresa para actualizar."
+                    "message": (
+                        "No existe configuración de empresa "
+                        "para actualizar."
+                    )
                 },
                 status=status.HTTP_404_NOT_FOUND
             )
@@ -113,11 +161,42 @@ class EmpresaView(APIView):
         empresa = serializer.save()
 
 
+        # ========================================================
+        # BITÁCORA
+        # ========================================================
+
+        registrar_bitacora(
+
+            usuario=request.user,
+
+            modulo="Empresa",
+
+            accion="ACTUALIZAR_EMPRESA",
+
+            descripcion=(
+                f"Configuración de empresa "
+                f"'{empresa.nombre}' actualizada por "
+                f"{request.user.nombre} "
+                f"{request.user.apellido}. "
+                f"RFC: {empresa.rfc or 'No especificado'}. "
+                f"Días de devolución: "
+                f"{empresa.dias_devolucion}. "
+                f"IVA: {empresa.iva}%."
+            )
+
+        )
+
+
         return Response(
             {
                 "success": True,
-                "message": "Configuración de empresa actualizada correctamente.",
-                "data": EmpresaSerializer(empresa).data
+                "message": (
+                    "Configuración de empresa "
+                    "actualizada correctamente."
+                ),
+                "data": EmpresaSerializer(
+                    empresa
+                ).data
             },
             status=status.HTTP_200_OK
         )

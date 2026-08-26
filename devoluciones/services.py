@@ -19,6 +19,9 @@ from .models import (
 
 from variantes.models import Variante
 
+from bitacora.services import registrar_bitacora
+
+
 @transaction.atomic
 def crear_devolucion(
     data,
@@ -229,6 +232,43 @@ def crear_devolucion(
     devolucion.save()
 
 
+    # ==========================================
+    # BITÁCORA
+    # ==========================================
+
+    registrar_bitacora(
+
+        usuario=usuario,
+
+        modulo="Devoluciones",
+
+        accion="DEVOLUCION_CREADA",
+
+        descripcion=(
+
+            f"Devolución '{devolucion.id}' "
+            f"creada para la venta "
+            f"'{venta.folio}' por "
+            f"{usuario.nombre} "
+            f"{usuario.apellido}. "
+
+            f"Tipo: {devolucion.tipo}. "
+
+            f"Motivo: {devolucion.motivo}. "
+
+            f"Total devuelto: "
+            f"${devolucion.total_devuelto}. "
+
+            f"Método de reembolso: "
+            f"{metodo_pago_reembolso.nombre}. "
+
+            f"Estado: PENDIENTE."
+
+        )
+
+    )
+
+
     return devolucion
 
 
@@ -386,6 +426,7 @@ def aprobar_devolucion(
         detalle_venta = detalle.detalle_venta
 
         # Bloquear variante
+
         variante = (
             Variante.objects
             .select_for_update()
@@ -395,6 +436,7 @@ def aprobar_devolucion(
         )
 
         # Reponer stock
+
         variante.stock += detalle.cantidad
 
         variante.save(
@@ -456,6 +498,38 @@ def aprobar_devolucion(
         update_fields=[
             "estado"
         ]
+    )
+
+
+    # ==========================================
+    # BITÁCORA
+    # ==========================================
+
+    registrar_bitacora(
+
+        usuario=usuario,
+
+        modulo="Devoluciones",
+
+        accion="DEVOLUCION_APROBADA",
+
+        descripcion=(
+
+            f"Devolución '{devolucion.id}' "
+            f"aprobada por "
+            f"{usuario.nombre} "
+            f"{usuario.apellido}. "
+
+            f"Venta: '{venta.folio}'. "
+
+            f"Total devuelto: "
+            f"${devolucion.total_devuelto}. "
+
+            f"Método de reembolso: "
+            f"{metodo_pago.nombre}."
+
+        )
+
     )
 
 
@@ -544,6 +618,35 @@ def cambiar_estado_devolucion(
         update_fields=[
             "estado"
         ]
+    )
+
+
+    # ==========================================
+    # BITÁCORA
+    # ==========================================
+
+    registrar_bitacora(
+
+        usuario=usuario,
+
+        modulo="Devoluciones",
+
+        accion="DEVOLUCION_RECHAZADA",
+
+        descripcion=(
+
+            f"Devolución '{devolucion.id}' "
+            f"rechazada por "
+            f"{usuario.nombre} "
+            f"{usuario.apellido}. "
+
+            f"Venta: '{devolucion.venta.folio}'. "
+
+            f"Motivo registrado: "
+            f"{devolucion.motivo}."
+
+        )
+
     )
 
 

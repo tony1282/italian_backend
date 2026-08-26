@@ -74,6 +74,8 @@ INSTALLED_APPS = [
     'tickets',
     'devoluciones',
     'garantias',
+    'bitacora',
+    'reportes',
     
 ]
 

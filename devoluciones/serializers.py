@@ -45,6 +45,11 @@ class DetalleDevolucionSerializer(serializers.ModelSerializer):
     variante = serializers.CharField(
         source="detalle_venta.variante.nombre"
     )
+    
+    metodo_pago_reembolso = serializers.CharField(
+        source="metodo_pago_reembolso.nombre",
+        allow_null=True
+    )
 
 
     class Meta:
@@ -87,6 +92,7 @@ class DevolucionSerializer(serializers.ModelSerializer):
             "id",
             "venta",
             "usuario",
+            "metodo_pago_reembolso",
             "tipo",
             "motivo",
             "estado",

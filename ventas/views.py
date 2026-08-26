@@ -20,6 +20,8 @@ from cajas.models import Caja
 from corte_caja.models import CorteCaja
 from inventario.models import MovimientoInventario
 
+from bitacora.services import registrar_bitacora
+
 
 
 class VentaViewSet(viewsets.ModelViewSet):
@@ -150,32 +152,54 @@ class VentaViewSet(viewsets.ModelViewSet):
 
 
         folio = f"V-{numero:07d}"
-        
+
+
         with transaction.atomic():
-            
+
             venta = Venta.objects.create(
+
                 folio=folio,
+
                 usuario=request.user,
+
                 corte_caja=corte,
+
                 metodo_pago=metodo_pago,
+
                 subtotal=0,
+
                 descuento=descuento,
+
                 iva=0,
+
                 total=0,
+
             )
-            
+
+
             for item in productos:
-                variante_id=item.get("variante_id")
-                
-                cantidad = int(item.get("cantidad"))
-                
-                try: 
+
+                variante_id = item.get(
+                    "variante_id"
+                )
+
+                cantidad = int(
+                    item.get("cantidad")
+                )
+
+
+                try:
+
                     variante = Variante.objects.get(
                         id=variante_id
                     )
+
                 except Variante.DoesNotExist:
-                    transaction.set_rollback(True)
-            
+
+                    transaction.set_rollback(
+                        True
+                    )
+
                     return Response(
                         {
                             "success": False,
@@ -183,11 +207,14 @@ class VentaViewSet(viewsets.ModelViewSet):
                         },
                         status=status.HTTP_404_NOT_FOUND
                     )
-            
+
+
                 if not variante.activo:
-            
-                    transaction.set_rollback(True)
-                    
+
+                    transaction.set_rollback(
+                        True
+                    )
+
                     return Response(
                         {
                             "success": False,
@@ -195,11 +222,14 @@ class VentaViewSet(viewsets.ModelViewSet):
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                    
+
+
                 if not variante.producto.activo:
-                    
-                    transaction.set_rollback(True)
-                    
+
+                    transaction.set_rollback(
+                        True
+                    )
+
                     return Response(
                         {
                             "success": False,
@@ -207,11 +237,14 @@ class VentaViewSet(viewsets.ModelViewSet):
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                    
-            
+
+
                 if variante.stock < cantidad:
-                    transaction.set_rollback(True)
-                    
+
+                    transaction.set_rollback(
+                        True
+                    )
+
                     return Response(
                         {
                             "success": False,
@@ -219,16 +252,24 @@ class VentaViewSet(viewsets.ModelViewSet):
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
-        
-                precio_unitario = variante.precio_menudeo
-        
-                subtotal_linea = (
-                    precio_unitario * cantidad
+
+
+                precio_unitario = (
+                    variante.precio_menudeo
                 )
-        
+
+
+                subtotal_linea = (
+                    precio_unitario *
+                    cantidad
+                )
+
+
                 subtotal += subtotal_linea
-            
+
+
                 DetalleVenta.objects.create(
+
                     venta=venta,
 
                     variante=variante,
@@ -240,201 +281,391 @@ class VentaViewSet(viewsets.ModelViewSet):
                     descuento=0,
 
                     subtotal=subtotal_linea
+
                 )
-                
+
+
                 MovimientoInventario.objects.create(
-                    
+
                     variante=variante,
-                    
+
                     tipo="SALIDA",
-                    
+
                     cantidad=cantidad,
+
                     observaciones=f"Venta {folio}",
-                    
+
                     usuario=request.user
+
                 )
-                
+
+
                 variante.stock -= cantidad
-                
+
                 variante.save()
-                
+
+
             subtotal -= descuento
-            
+
+
             iva = subtotal * (
-                iva_porcentaje / Decimal("100")
+                iva_porcentaje /
+                Decimal("100")
             )
-            
+
+
             total = subtotal + iva
-            
+
+
             venta.subtotal = subtotal
-            
-            venta.iva = iva 
-            
+
+            venta.iva = iva
+
             venta.total = total
-            
+
             venta.save()
-            
-            return Response (
+
+
+            # ==========================================
+            # BITÁCORA
+            # ==========================================
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Ventas",
+
+                accion="REGISTRAR_VENTA",
+
+                descripcion=(
+                    f"Venta folio {venta.folio} "
+                    f"registrada correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Total: ${venta.total}"
+                )
+
+            )
+
+
+            return Response(
+
                 {
                     "success": True,
+
                     "folio": venta.folio,
+
                     "venta_id": venta.id,
-                    "message": "Venta registrada correctamente."
+
+                    "message": (
+                        "Venta registrada correctamente."
+                    )
+
                 },
+
                 status=status.HTTP_201_CREATED
+
             )
-            
+
+
     def list(self, request):
-        
+
         ventas = Venta.objects.all()
-        
+
         data = []
-        
+
+
         for venta in ventas:
-            
+
             data.append(
+
                 {
+
                     "id": venta.id,
+
                     "folio": venta.folio,
+
                     "fecha": venta.fecha,
+
                     "usuario": venta.usuario.nombre,
+
                     "total": venta.total,
+
                     "estado": venta.estado,
+
                 }
-            )       
-        
+
+            )
+
+
         return Response(
+
             {
+
                 "success": True,
+
                 "data": data
+
             }
+
         )
-        
-        
+
+
     def retrieve(self, request, pk=None):
-        
+
         try:
+
             venta = Venta.objects.get(
                 pk=pk
             )
-            
+
         except Venta.DoesNotExist:
-            
+
             return Response(
+
                 {
+
                     "success": False,
+
                     "message": "La venta no existe."
+
                 },
+
                 status=status.HTTP_404_NOT_FOUND
+
             )
-        
+
+
         productos = []
-        
+
+
         for detalle in venta.detalles.all():
-            
+
             productos.append(
+
                 {
-                    "producto": detalle.variante.producto.nombre,
-                    "variante": detalle.variante.nombre,
-                    "cantidad": detalle.cantidad,
-                    "precio_unitario": detalle.precio_unitario,
-                    "subtotal": detalle.subtotal
+
+                    "producto": (
+                        detalle.variante
+                        .producto
+                        .nombre
+                    ),
+
+                    "variante": (
+                        detalle.variante
+                        .nombre
+                    ),
+
+                    "cantidad": (
+                        detalle.cantidad
+                    ),
+
+                    "precio_unitario": (
+                        detalle.precio_unitario
+                    ),
+
+                    "subtotal": (
+                        detalle.subtotal
+                    )
+
                 }
+
             )
-            
-        return Response({
-            
-            "success": True,
 
-            "data": {
-                "id": venta.id,
 
-                "folio": venta.folio,
+        return Response(
 
-                "fecha": venta.fecha,
+            {
 
-                "usuario": venta.usuario.nombre,
+                "success": True,
 
-                "metodo_pago": venta.metodo_pago.nombre,
+                "data": {
 
-                "caja": venta.corte_caja.caja.nombre,
+                    "id": venta.id,
 
-                "subtotal": venta.subtotal,
+                    "folio": venta.folio,
 
-                "iva": venta.iva,
+                    "fecha": venta.fecha,
 
-                "total": venta.total,
+                    "usuario": (
+                        venta.usuario.nombre
+                    ),
 
-                "estado": venta.estado,
+                    "metodo_pago": (
+                        venta.metodo_pago.nombre
+                    ),
 
-                "productos": productos
+                    "caja": (
+                        venta.corte_caja
+                        .caja
+                        .nombre
+                    ),
+
+                    "subtotal": venta.subtotal,
+
+                    "iva": venta.iva,
+
+                    "total": venta.total,
+
+                    "estado": venta.estado,
+
+                    "productos": productos
 
                 }
-            })
-    
-    
-                
+
+            }
+
+        )
+
+
     @action(
         detail=True,
         methods=["post"],
         url_path="cancelar"
     )
-    def cancelar(self, request, pk=None):
+    def cancelar(
+        self,
+        request,
+        pk=None
+    ):
+
         try:
+
             venta = Venta.objects.get(
                 id=pk
             )
-        
+
         except Venta.DoesNotExist:
-            
+
             return Response(
+
                 {
+
                     "success": False,
+
                     "message": "La venta no existe"
+
                 },
+
                 status=status.HTTP_404_NOT_FOUND
+
             )
+
+
         if request.user.rol != 1:
-            
+
             return Response(
+
                 {
+
                     "success": False,
-                    "message": "No tiene permisos para cancelar ventas"
+
+                    "message": (
+                        "No tiene permisos "
+                        "para cancelar ventas"
+                    )
+
                 },
+
                 status=status.HTTP_403_FORBIDDEN
+
             )
+
+
         if venta.estado == "CANCELADA":
-            
+
             return Response(
+
                 {
+
                     "success": False,
-                    "message": "La venta ya esta cancelada"
+
+                    "message": (
+                        "La venta ya esta cancelada"
+                    )
+
                 },
+
                 status=status.HTTP_400_BAD_REQUEST
+
             )
-            
+
+
         with transaction.atomic():
+
             detalles = venta.detalles.all()
-            
+
+
             for detalle in detalles:
+
                 variante = detalle.variante
-                variante.stock += detalle.cantidad
-                variante.save()
-                
-                MovimientoInventario.objects.create(
-                    variante=variante,
-                    tipo="ENTRADA",
-                    cantidad=detalle.cantidad,
-                    observaciones=f"Cancelación {venta.folio}",
-                    usuario=request.user
+
+                variante.stock += (
+                    detalle.cantidad
                 )
+
+                variante.save()
+
+
+                MovimientoInventario.objects.create(
+
+                    variante=variante,
+
+                    tipo="ENTRADA",
+
+                    cantidad=detalle.cantidad,
+
+                    observaciones=(
+                        f"Cancelación "
+                        f"{venta.folio}"
+                    ),
+
+                    usuario=request.user
+
+                )
+
+
             venta.estado = "CANCELADA"
+
             venta.save()
-            
+
+
+            # ==========================================
+            # BITÁCORA
+            # ==========================================
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Ventas",
+
+                accion="CANCELAR_VENTA",
+
+                descripcion=(
+                    f"Venta folio {venta.folio} "
+                    f"cancelada correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Se restauró el stock de los productos."
+                )
+
+            )
+
+
         return Response(
+
             {
+
                 "success": True,
-                "message": "Venta cancelada Correctamente."
+
+                "message": (
+                    "Venta cancelada Correctamente."
+                )
+
             },
+
             status=status.HTTP_200_OK
+
         )

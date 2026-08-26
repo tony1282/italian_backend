@@ -27,7 +27,7 @@ from .serializers import (CorteCajaSerializer, MovimientoCajaSerializer)
 
 from cajas.models import Caja
 
-
+from bitacora.services import registrar_bitacora
 
 class CorteCajaViewSet(
     mixins.ListModelMixin,
@@ -144,7 +144,22 @@ class CorteCajaViewSet(
             caja.save()
 
 
-
+            registrar_bitacora(
+                usuario=request.user,
+            
+                modulo="Caja",
+            
+                accion="APERTURA_CAJA",
+            
+                descripcion=(
+                    f"Caja '{caja.nombre}' "
+                    f"abierta correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Efectivo inicial: ${efectivo_inicial}"
+                )
+            )
+        
         return Response(
             {
                 "success":True,
@@ -283,6 +298,24 @@ class CorteCajaViewSet(
             corte.caja.estado = "CERRADA"
 
             corte.caja.save()
+            
+            registrar_bitacora(
+                
+                usuario=request.user,
+                modulo="Caja",
+                accion="CIERRE_CAJA",
+                
+                descripcion=(
+                    f"Caja '{corte.caja.nombre}' "
+                    f"cerrada correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Efectivo esperado: ${efectivo_esperado}. "
+                    f"Efectivo contado: ${efectivo_final}. "
+                    f"Diferencia: ${diferencia}"    
+                )
+                
+            )
 
 
 

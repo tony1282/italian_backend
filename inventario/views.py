@@ -9,6 +9,8 @@ from .serializers import MovimientoInventarioSerializer
 
 from variantes.models import Variante
 
+from bitacora.services import registrar_bitacora
+
 
 class MovimientoInventarioViewSet(
     mixins.ListModelMixin,
@@ -43,6 +45,7 @@ class MovimientoInventarioViewSet(
                  },
                 status=status.HTTP_400_BAD_REQUEST
                 )
+
         if cantidad <= 0: 
             return Response(
                 {
@@ -83,12 +86,36 @@ class MovimientoInventarioViewSet(
             variante.save()
 
 
+            # ==========================================
+            # BITÁCORA
+            # ==========================================
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Inventario",
+
+                accion="ENTRADA_INVENTARIO",
+
+                descripcion=(
+                    f"Entrada de inventario registrada para "
+                    f"la variante '{variante.nombre}' por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Cantidad ingresada: {cantidad}. "
+                    f"Stock actual: {variante.stock}."
+                )
+
+            )
+
+
         return Response(
             {
                 "success": True,
                 "message": "Movimiento de inventario registrado correctamente.",
                 "data": {
-                    "id" : movimiento.id
+                    "id": movimiento.id
                 }
             },
             status=status.HTTP_201_CREATED
@@ -106,7 +133,9 @@ class MovimientoInventarioViewSet(
         
         try:
             cantidad = int(request.data.get("cantidad"))
+
         except (TypeError, ValueError):
+
             return Response (
                 {
                     "success": False,
@@ -116,6 +145,7 @@ class MovimientoInventarioViewSet(
             )
         
         if cantidad <= 0:
+
             return Response (
                 {
                     "success" : False,
@@ -166,6 +196,30 @@ class MovimientoInventarioViewSet(
             variante.save()
 
 
+            # ==========================================
+            # BITÁCORA
+            # ==========================================
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Inventario",
+
+                accion="SALIDA_INVENTARIO",
+
+                descripcion=(
+                    f"Salida de inventario registrada para "
+                    f"la variante '{variante.nombre}' por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Cantidad retirada: {cantidad}. "
+                    f"Stock actual: {variante.stock}."
+                )
+
+            )
+
+
         return Response(
             {
                 "success": True,
@@ -191,6 +245,7 @@ class MovimientoInventarioViewSet(
             cantidad = int(request.data.get("cantidad"))
             
         except (ValueError, TypeError):
+
             return Response (
                 {
                     "success" : False,
@@ -200,11 +255,13 @@ class MovimientoInventarioViewSet(
             )
         
         if cantidad <= 0:
-            return Response ( {
-                "success": False,
-                "message": "La cantidad debe ser mayor a cero."
-            },
-            status=status.HTTP_400_BAD_REQUEST
+
+            return Response (
+                {
+                    "success": False,
+                    "message": "La cantidad debe ser mayor a cero."
+                },
+                status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
@@ -236,6 +293,29 @@ class MovimientoInventarioViewSet(
 
             variante.stock = cantidad
             variante.save()
+
+
+            # ==========================================
+            # BITÁCORA
+            # ==========================================
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Inventario",
+
+                accion="AJUSTE_INVENTARIO",
+
+                descripcion=(
+                    f"Ajuste de inventario realizado para "
+                    f"la variante '{variante.nombre}' por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}. "
+                    f"Nuevo stock: {cantidad}."
+                )
+
+            )
 
 
         return Response(
