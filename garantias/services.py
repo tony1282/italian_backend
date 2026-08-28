@@ -13,18 +13,28 @@ from bitacora.services import registrar_bitacora
 from .models import Garantia
 
 
-@transaction.atomic
-def crear_garantia(data, usuario):
+# ============================================================
+# CREAR GARANTÍA
+# ============================================================
 
-    # ============================================================
+@transaction.atomic
+def crear_garantia(
+    data,
+    usuario
+):
+
+    # ========================================================
     # 1. Buscar y bloquear la venta
-    # ============================================================
+    # ========================================================
 
     try:
+
         venta = (
             Venta.objects
             .select_for_update()
-            .get(id=data["venta_id"])
+            .get(
+                id=data["venta_id"]
+            )
         )
 
     except Venta.DoesNotExist:
@@ -33,10 +43,9 @@ def crear_garantia(data, usuario):
             "La venta no existe."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 2. Validar estado de la venta
-    # ============================================================
+    # ========================================================
 
     if venta.estado == "CANCELADA":
 
@@ -44,22 +53,23 @@ def crear_garantia(data, usuario):
             "No se puede crear una garantía para una venta cancelada."
         )
 
-
     if venta.estado == "DEVUELTA":
 
         raise Exception(
             "No se puede crear una garantía para una venta devuelta."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 3. Buscar variante
-    # ============================================================
+    # ========================================================
 
     try:
 
-        variante = Variante.objects.get(
-            id=data["variante_id"]
+        variante = (
+            Variante.objects
+            .get(
+                id=data["variante_id"]
+            )
         )
 
     except Variante.DoesNotExist:
@@ -68,10 +78,9 @@ def crear_garantia(data, usuario):
             "La variante no existe."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 4. Buscar y bloquear el detalle de venta
-    # ============================================================
+    # ========================================================
 
     try:
 
@@ -90,10 +99,9 @@ def crear_garantia(data, usuario):
             "La variante no pertenece a la venta indicada."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 5. Validar cantidad
-    # ============================================================
+    # ========================================================
 
     cantidad = data["cantidad"]
 
@@ -104,10 +112,9 @@ def crear_garantia(data, usuario):
             "no puede superar la cantidad vendida."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 6. Validar que tenga garantía configurada
-    # ============================================================
+    # ========================================================
 
     if not variante.garantia_meses:
 
@@ -115,10 +122,9 @@ def crear_garantia(data, usuario):
             "Este producto no tiene garantía configurada."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 7. Validar vigencia de la garantía
-    # ============================================================
+    # ========================================================
 
     fecha_limite = (
         venta.fecha
@@ -134,8 +140,7 @@ def crear_garantia(data, usuario):
             f"{fecha_limite.strftime('%d/%m/%Y')}."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 8. Calcular cantidad ya utilizada en garantías
     #
     # PENDIENTE y APROBADA reservan unidades.
@@ -143,7 +148,7 @@ def crear_garantia(data, usuario):
     # RECHAZADA no cuenta porque no consumió una garantía.
     #
     # FINALIZADA sí cuenta porque la garantía ya fue atendida.
-    # ============================================================
+    # ========================================================
 
     cantidad_garantizada = (
         Garantia.objects
@@ -161,13 +166,11 @@ def crear_garantia(data, usuario):
         or 0
     )
 
-
     cantidad_disponible = (
         detalle_venta.cantidad
         -
         cantidad_garantizada
     )
-
 
     if cantidad > cantidad_disponible:
 
@@ -177,10 +180,9 @@ def crear_garantia(data, usuario):
             f"Disponibles: {cantidad_disponible}."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 9. Crear garantía
-    # ============================================================
+    # ========================================================
 
     garantia = Garantia.objects.create(
 
@@ -200,10 +202,9 @@ def crear_garantia(data, usuario):
 
     )
 
-
-    # ============================================================
+    # ========================================================
     # BITÁCORA
-    # ============================================================
+    # ========================================================
 
     registrar_bitacora(
 
@@ -225,9 +226,12 @@ def crear_garantia(data, usuario):
 
     )
 
-
     return garantia
 
+
+# ============================================================
+# APROBAR GARANTÍA
+# ============================================================
 
 @transaction.atomic
 def aprobar_garantia(
@@ -236,9 +240,9 @@ def aprobar_garantia(
     usuario
 ):
 
-    # ============================================================
+    # ========================================================
     # 1. Buscar y bloquear garantía
-    # ============================================================
+    # ========================================================
 
     try:
 
@@ -261,17 +265,15 @@ def aprobar_garantia(
             "La garantía no existe."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 2. Validar estado
-    # ============================================================
+    # ========================================================
 
     if garantia.estado != "PENDIENTE":
 
         raise Exception(
             "Solo se pueden aprobar garantías pendientes."
         )
-
 
     resolucion = data["resolucion"]
 
@@ -281,10 +283,9 @@ def aprobar_garantia(
 
     cantidad = garantia.cantidad
 
-
-    # ============================================================
+    # ========================================================
     # 3. REEMPLAZO
-    # ============================================================
+    # ========================================================
 
     if resolucion == "REEMPLAZO":
 
@@ -296,8 +297,11 @@ def aprobar_garantia(
             )
         )
 
-
-        # Verificar stock
+        # ----------------------------------------------------
+        # Verificar stock ANTES de cualquier movimiento.
+        # Se necesita al menos `cantidad` unidades para
+        # entregar el reemplazo al cliente.
+        # ----------------------------------------------------
 
         if variante.stock < cantidad:
 
@@ -307,12 +311,18 @@ def aprobar_garantia(
                 f"Cantidad requerida: {cantidad}."
             )
 
+        # ----------------------------------------------------
+        # Producto defectuoso recibido (entrada)
+        # ----------------------------------------------------
 
-        # --------------------------------------------------------
-        # Producto defectuoso recibido
-        # --------------------------------------------------------
+        stock_antes_entrada = variante.stock
 
-        variante.stock += cantidad
+        stock_tras_entrada = (
+            stock_antes_entrada
+            + cantidad
+        )
+
+        variante.stock = stock_tras_entrada
 
         variante.save(
             update_fields=[
@@ -320,17 +330,21 @@ def aprobar_garantia(
             ]
         )
 
-
         MovimientoInventario.objects.create(
 
             variante=variante,
 
             tipo="GARANTIA",
 
+            stock_anterior=stock_antes_entrada,
+
             cantidad=cantidad,
 
+            stock_nuevo=stock_tras_entrada,
+
             observaciones=(
-                f"Reemplazo por garantía {garantia.id} - "
+                f"Reemplazo por garantía "
+                f"{garantia.id} - "
                 "entrada producto defectuoso"
             ),
 
@@ -338,12 +352,18 @@ def aprobar_garantia(
 
         )
 
+        # ----------------------------------------------------
+        # Producto nuevo entregado (salida)
+        # ----------------------------------------------------
 
-        # --------------------------------------------------------
-        # Producto nuevo entregado
-        # --------------------------------------------------------
+        stock_antes_salida = variante.stock
 
-        variante.stock -= cantidad
+        stock_tras_salida = (
+            stock_antes_salida
+            - cantidad
+        )
+
+        variante.stock = stock_tras_salida
 
         variante.save(
             update_fields=[
@@ -351,17 +371,21 @@ def aprobar_garantia(
             ]
         )
 
-
         MovimientoInventario.objects.create(
 
             variante=variante,
 
             tipo="GARANTIA",
 
+            stock_anterior=stock_antes_salida,
+
             cantidad=cantidad,
 
+            stock_nuevo=stock_tras_salida,
+
             observaciones=(
-                f"Reemplazo por garantía {garantia.id} - "
+                f"Reemplazo por garantía "
+                f"{garantia.id} - "
                 "salida producto nuevo"
             ),
 
@@ -369,10 +393,9 @@ def aprobar_garantia(
 
         )
 
-
-    # ============================================================
+    # ========================================================
     # 4. CAMBIO_PRODUCTO
-    # ============================================================
+    # ========================================================
 
     elif resolucion == "CAMBIO_PRODUCTO":
 
@@ -380,17 +403,15 @@ def aprobar_garantia(
             "variante_nueva_id"
         )
 
-
         if not variante_nueva_id:
 
             raise Exception(
                 "Debe especificar la variante nueva."
             )
 
-
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # Bloquear variante original
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
         variante_original = (
             Variante.objects
@@ -400,10 +421,9 @@ def aprobar_garantia(
             )
         )
 
-
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # Bloquear variante nueva
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
         try:
 
@@ -421,10 +441,9 @@ def aprobar_garantia(
                 "La variante nueva no existe."
             )
 
-
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # No permitir misma variante
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
         if variante_original.id == variante_nueva.id:
 
@@ -433,10 +452,9 @@ def aprobar_garantia(
                 "a la variante original."
             )
 
-
-        # --------------------------------------------------------
-        # Validar stock
-        # --------------------------------------------------------
+        # ----------------------------------------------------
+        # Validar stock de la variante nueva
+        # ----------------------------------------------------
 
         if variante_nueva.stock < cantidad:
 
@@ -447,12 +465,22 @@ def aprobar_garantia(
                 f"Cantidad requerida: {cantidad}."
             )
 
-
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # Producto original regresa
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
-        variante_original.stock += cantidad
+        stock_anterior_original = (
+            variante_original.stock
+        )
+
+        stock_nuevo_original = (
+            stock_anterior_original
+            + cantidad
+        )
+
+        variante_original.stock = (
+            stock_nuevo_original
+        )
 
         variante_original.save(
             update_fields=[
@@ -460,14 +488,21 @@ def aprobar_garantia(
             ]
         )
 
-
         MovimientoInventario.objects.create(
 
             variante=variante_original,
 
             tipo="CAMBIO_PRODUCTO",
 
+            stock_anterior=(
+                stock_anterior_original
+            ),
+
             cantidad=cantidad,
+
+            stock_nuevo=(
+                stock_nuevo_original
+            ),
 
             observaciones=(
                 f"Cambio de producto por garantía "
@@ -479,12 +514,22 @@ def aprobar_garantia(
 
         )
 
-
-        # --------------------------------------------------------
+        # ----------------------------------------------------
         # Producto nuevo sale
-        # --------------------------------------------------------
+        # ----------------------------------------------------
 
-        variante_nueva.stock -= cantidad
+        stock_anterior_nueva = (
+            variante_nueva.stock
+        )
+
+        stock_nuevo_nueva = (
+            stock_anterior_nueva
+            - cantidad
+        )
+
+        variante_nueva.stock = (
+            stock_nuevo_nueva
+        )
 
         variante_nueva.save(
             update_fields=[
@@ -492,14 +537,21 @@ def aprobar_garantia(
             ]
         )
 
-
         MovimientoInventario.objects.create(
 
             variante=variante_nueva,
 
             tipo="CAMBIO_PRODUCTO",
 
+            stock_anterior=(
+                stock_anterior_nueva
+            ),
+
             cantidad=cantidad,
+
+            stock_nuevo=(
+                stock_nuevo_nueva
+            ),
 
             observaciones=(
                 f"Cambio de producto por garantía "
@@ -511,30 +563,28 @@ def aprobar_garantia(
 
         )
 
+        garantia.variante_nueva = (
+            variante_nueva
+        )
 
-        garantia.variante_nueva = variante_nueva
-
-
-    # ============================================================
+    # ========================================================
     # 5. REPARACION
-    # ============================================================
+    # ========================================================
 
     elif resolucion == "REPARACION":
 
         # La reparación no modifica el stock.
         pass
 
-
-    # ============================================================
+    # ========================================================
     # 6. Actualizar garantía
-    # ============================================================
+    # ========================================================
 
     garantia.estado = "APROBADA"
 
     garantia.resolucion = resolucion
 
     garantia.observaciones = observaciones
-
 
     garantia.save(
         update_fields=[
@@ -546,10 +596,9 @@ def aprobar_garantia(
         ]
     )
 
-
-    # ============================================================
+    # ========================================================
     # BITÁCORA
-    # ============================================================
+    # ========================================================
 
     registrar_bitacora(
 
@@ -571,9 +620,12 @@ def aprobar_garantia(
 
     )
 
-
     return garantia
 
+
+# ============================================================
+# RECHAZAR GARANTÍA
+# ============================================================
 
 @transaction.atomic
 def rechazar_garantia(
@@ -582,9 +634,9 @@ def rechazar_garantia(
     usuario
 ):
 
-    # ============================================================
+    # ========================================================
     # 1. Buscar y bloquear
-    # ============================================================
+    # ========================================================
 
     try:
 
@@ -602,10 +654,9 @@ def rechazar_garantia(
             "La garantía no existe."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 2. Validar estado
-    # ============================================================
+    # ========================================================
 
     if garantia.estado != "PENDIENTE":
 
@@ -613,17 +664,15 @@ def rechazar_garantia(
             "Solo se pueden rechazar garantías pendientes."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 3. Rechazar
-    # ============================================================
+    # ========================================================
 
     garantia.estado = "RECHAZADA"
 
     garantia.observaciones = data.get(
         "observaciones"
     )
-
 
     garantia.save(
         update_fields=[
@@ -633,10 +682,9 @@ def rechazar_garantia(
         ]
     )
 
-
-    # ============================================================
+    # ========================================================
     # BITÁCORA
-    # ============================================================
+    # ========================================================
 
     registrar_bitacora(
 
@@ -659,9 +707,12 @@ def rechazar_garantia(
 
     )
 
-
     return garantia
 
+
+# ============================================================
+# FINALIZAR GARANTÍA
+# ============================================================
 
 @transaction.atomic
 def finalizar_garantia(
@@ -670,9 +721,9 @@ def finalizar_garantia(
     usuario
 ):
 
-    # ============================================================
+    # ========================================================
     # 1. Buscar y bloquear
-    # ============================================================
+    # ========================================================
 
     try:
 
@@ -690,10 +741,9 @@ def finalizar_garantia(
             "La garantía no existe."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 2. Validar estado
-    # ============================================================
+    # ========================================================
 
     if garantia.estado != "APROBADA":
 
@@ -701,20 +751,17 @@ def finalizar_garantia(
             "Solo se pueden finalizar garantías aprobadas."
         )
 
-
-    # ============================================================
+    # ========================================================
     # 3. Finalizar
-    # ============================================================
+    # ========================================================
 
     garantia.estado = "FINALIZADA"
-
 
     if data.get("observaciones"):
 
         garantia.observaciones = data[
             "observaciones"
         ]
-
 
     garantia.save(
         update_fields=[
@@ -724,10 +771,9 @@ def finalizar_garantia(
         ]
     )
 
-
-    # ============================================================
+    # ========================================================
     # BITÁCORA
-    # ============================================================
+    # ========================================================
 
     registrar_bitacora(
 
@@ -744,10 +790,10 @@ def finalizar_garantia(
             f"Venta: '{garantia.venta.folio}'. "
             f"Variante: '{garantia.variante.nombre}'. "
             f"Cantidad: {garantia.cantidad}. "
-            f"Resolución: {garantia.resolucion or 'No especificada'}."
+            f"Resolución: "
+            f"{garantia.resolucion or 'No especificada'}."
         )
 
     )
-
 
     return garantia

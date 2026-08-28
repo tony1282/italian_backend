@@ -293,17 +293,57 @@ class LoginSerializer(
         attrs
     ):
 
-        data = super().validate(
-            attrs
-        )
+        # ------------------------------------------------------
+        # BUSCAR USUARIO
+        # ------------------------------------------------------
 
-        usuario = self.user
+        usuario = Usuario.objects.filter(
+            usuario=attrs.get("usuario")
+        ).first()
+
+        # ------------------------------------------------------
+        # USUARIO NO EXISTE
+        # ------------------------------------------------------
+
+        if not usuario:
+
+            raise AuthenticationFailed(
+                "Usuario o contraseña incorrectos."
+            )
+
+        # ------------------------------------------------------
+        # USUARIO INACTIVO
+        # ------------------------------------------------------
 
         if not usuario.activo:
 
             raise AuthenticationFailed(
                 "Este usuario está inactivo."
             )
+
+        # ------------------------------------------------------
+        # VALIDAR CREDENCIALES
+        # ------------------------------------------------------
+
+        data = super().validate(
+            attrs
+        )
+
+        usuario = self.user
+
+        # ------------------------------------------------------
+        # SEGUNDA VALIDACIÓN DE SEGURIDAD
+        # ------------------------------------------------------
+
+        if not usuario.activo:
+
+            raise AuthenticationFailed(
+                "Este usuario está inactivo."
+            )
+
+        # ------------------------------------------------------
+        # RESPUESTA
+        # ------------------------------------------------------
 
         return {
 
@@ -325,15 +365,20 @@ class LoginSerializer(
 
                     "nombre": usuario.nombre,
 
-                    "rol": usuario.rol
+                    "apellido": usuario.apellido,
+
+                    "usuario": usuario.usuario,
+
+                    "rol": usuario.rol,
+
+                    "activo": usuario.activo
 
                 }
 
             }
 
         }
-
-
+        
 # ==========================================================
 # REFRESH TOKEN
 # ==========================================================
@@ -346,10 +391,21 @@ class RefreshSerializer(
         self,
         attrs
     ):
-
         data = super().validate(
             attrs
         )
+
+        usuario = self.user
+
+        # ------------------------------------------------------
+        # VERIFICAR QUE EL USUARIO SIGA ACTIVO
+        # ------------------------------------------------------
+
+        if not usuario.activo:
+
+            raise AuthenticationFailed(
+                "Este usuario está inactivo."
+            )
 
         response = {
 
@@ -364,7 +420,6 @@ class RefreshSerializer(
                 "access": data["access"]
 
             }
-
         }
 
         if "refresh" in data:

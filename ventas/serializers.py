@@ -3,17 +3,39 @@ from rest_framework import serializers
 from .models import Venta
 
 
-class VentaSerializer(serializers.ModelSerializer):
+class VentaSerializer(
+    serializers.ModelSerializer
+):
 
     class Meta:
 
         model = Venta
 
-        fields = "__all__"
+        fields = [
+            "id",
+            "folio",
+            "usuario",
+            "corte_caja",
+            "metodo_pago",
+            "fecha",
+            "subtotal",
+            "descuento",
+            "iva",
+            "total",
+            "estado",
+            "fecha_creacion",
+        ]
 
         read_only_fields = [
             "id",
             "folio",
+            "usuario",
+            "corte_caja",
+            "metodo_pago",
             "fecha",
-            "fecha_creacion"
+            "subtotal",
+            "iva",
+            "total",
+            "estado",
+            "fecha_creacion",
         ]

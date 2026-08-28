@@ -1,6 +1,10 @@
 from rest_framework import serializers
 
 
+# ============================================================
+# REPORTE DE VENTAS
+# ============================================================
+
 class ReporteVentaSerializer(
     serializers.Serializer
 ):
@@ -38,6 +42,10 @@ class ReporteVentaSerializer(
     estado = serializers.CharField()
 
 
+# ============================================================
+# PRODUCTOS MÁS VENDIDOS
+# ============================================================
+
 class ReporteProductoSerializer(
     serializers.Serializer
 ):
@@ -46,13 +54,21 @@ class ReporteProductoSerializer(
 
     variante = serializers.CharField()
 
-    cantidad_vendida = serializers.IntegerField()
-
-    total_generado = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2
+    cantidad_vendida = (
+        serializers.IntegerField()
     )
 
+    total_generado = (
+        serializers.DecimalField(
+            max_digits=10,
+            decimal_places=2
+        )
+    )
+
+
+# ============================================================
+# INVENTARIO
+# ============================================================
 
 class ReporteInventarioSerializer(
     serializers.Serializer
@@ -90,6 +106,10 @@ class ReporteInventarioSerializer(
     activo = serializers.BooleanField()
 
 
+# ============================================================
+# STOCK BAJO
+# ============================================================
+
 class ReporteStockBajoSerializer(
     serializers.Serializer
 ):
@@ -104,8 +124,14 @@ class ReporteStockBajoSerializer(
 
     stock_minimo = serializers.IntegerField()
 
-    necesita_reposicion = serializers.BooleanField()
+    necesita_reposicion = (
+        serializers.BooleanField()
+    )
 
+
+# ============================================================
+# CORTES DE CAJA
+# ============================================================
 
 class ReporteCorteSerializer(
     serializers.Serializer
@@ -117,29 +143,41 @@ class ReporteCorteSerializer(
 
     usuario = serializers.CharField()
 
-    fecha_inicio = serializers.DateTimeField()
+    fecha_inicio = (
+        serializers.DateTimeField()
+    )
 
     fecha_fin = serializers.DateTimeField(
         allow_null=True
     )
 
-    efectivo_inicial = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2
+    efectivo_inicial = (
+        serializers.DecimalField(
+            max_digits=10,
+            decimal_places=2
+        )
     )
 
-    efectivo_final = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        allow_null=True
+    efectivo_final = (
+        serializers.DecimalField(
+            max_digits=10,
+            decimal_places=2,
+            allow_null=True
+        )
     )
 
-    diferencia = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        allow_null=True
+    diferencia = (
+        serializers.DecimalField(
+            max_digits=10,
+            decimal_places=2,
+            allow_null=True
+        )
     )
 
+
+# ============================================================
+# DEVOLUCIONES
+# ============================================================
 
 class ReporteDevolucionProductoSerializer(
     serializers.Serializer
@@ -173,17 +211,25 @@ class ReporteDevolucionSerializer(
 
     estado = serializers.CharField()
 
-    total_devuelto = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2
+    total_devuelto = (
+        serializers.DecimalField(
+            max_digits=10,
+            decimal_places=2
+        )
     )
 
-    productos = ReporteDevolucionProductoSerializer(
-        many=True
+    productos = (
+        ReporteDevolucionProductoSerializer(
+            many=True
+        )
     )
 
     fecha = serializers.DateTimeField()
 
+
+# ============================================================
+# GARANTÍAS
+# ============================================================
 
 class ReporteGarantiaSerializer(
     serializers.Serializer
@@ -219,8 +265,14 @@ class ReporteGarantiaSerializer(
 
     fecha = serializers.DateTimeField()
 
-    fecha_actualizacion = serializers.DateTimeField()
+    fecha_actualizacion = (
+        serializers.DateTimeField()
+    )
 
+
+# ============================================================
+# MOVIMIENTOS DE INVENTARIO
+# ============================================================
 
 class ReporteMovimientoSerializer(
     serializers.Serializer
@@ -234,7 +286,15 @@ class ReporteMovimientoSerializer(
 
     tipo = serializers.CharField()
 
+    stock_anterior = (
+        serializers.IntegerField()
+    )
+
     cantidad = serializers.IntegerField()
+
+    stock_nuevo = (
+        serializers.IntegerField()
+    )
 
     observaciones = serializers.CharField(
         allow_null=True
@@ -243,3 +303,56 @@ class ReporteMovimientoSerializer(
     usuario = serializers.CharField()
 
     fecha = serializers.DateTimeField()
+
+
+# ============================================================
+# RESUMEN DEL DÍA
+# ============================================================
+
+class ReporteResumenDiaSerializer(
+    serializers.Serializer
+):
+
+    fecha = serializers.DateField()
+
+    cantidad_ventas = (
+        serializers.IntegerField()
+    )
+
+    subtotal = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    descuento = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    iva = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    total_vendido = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    reembolsos = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    venta_neta = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2
+    )
+
+    metodos_pago = (
+        serializers.DictField()
+    )
+
+    reembolsos_por_metodo = (
+        serializers.DictField()
+    )

@@ -1,6 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+
+from usuarios.permissions import IsAdmin
 
 from .models import MetodoPago
 from .serializers import MetodoPagoSerializer
@@ -8,7 +11,18 @@ from .serializers import MetodoPagoSerializer
 
 class MetodoPagoView(APIView):
 
-    permission_classes = []
+    def get_permissions(self):
+
+        if self.request.method == "GET":
+
+            return [
+                IsAuthenticated()
+            ]
+
+        return [
+            IsAuthenticated(),
+            IsAdmin()
+        ]
 
 
     # GET /api/metodos-pago/
@@ -182,7 +196,9 @@ class MetodoPagoView(APIView):
 
 class MetodoPagoActivoView(APIView):
 
-    permission_classes = []
+    permission_classes = [
+        IsAuthenticated
+    ]
 
 
     # GET /api/metodos-pago/activos/

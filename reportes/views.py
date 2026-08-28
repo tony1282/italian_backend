@@ -1,9 +1,32 @@
+import uuid
+
+from datetime import datetime
+
 from rest_framework.views import APIView
+
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+
+from rest_framework.permissions import (
+    IsAuthenticated
+)
+
+from rest_framework.pagination import (
+    PageNumberPagination
+)
+
 from rest_framework import status
 
+from usuarios.permissions import IsAdmin
+
+from ventas.models import Venta
+
+from inventario.models import MovimientoInventario
+
+from garantias.models import Garantia
+
+
 from .services import (
+    reporte_resumen_dia,
     reporte_ventas,
     reporte_productos,
     reporte_inventario,
@@ -14,7 +37,9 @@ from .services import (
     reporte_movimientos,
 )
 
+
 from .serializers import (
+    ReporteResumenDiaSerializer,
     ReporteVentaSerializer,
     ReporteProductoSerializer,
     ReporteInventarioSerializer,
@@ -27,54 +52,274 @@ from .serializers import (
 
 
 # ============================================================
-# PERMISO
+# PERMISOS
 # ============================================================
 
-def validar_admin(request):
+PERMISSION_ADMIN = [
+    IsAuthenticated,
+    IsAdmin,
+]
 
-    return request.user.rol == 1
+PERMISSION_EMPLEADO = [
+    IsAuthenticated,
+]
+
+
+# ============================================================
+# PAGINACIÓN
+# ============================================================
+
+class ReportePagination(
+    PageNumberPagination
+):
+
+    page_size = 50
+
+    max_page_size = 200
+
+
+def _paginar(request, data):
+
+    paginator = ReportePagination()
+
+    pagina = paginator.paginate_queryset(
+        data,
+        request
+    )
+
+    return paginator, pagina
+
+
+# ============================================================
+# VALIDAR FECHA
+# ============================================================
+
+def _parsear_fecha(
+    valor,
+    nombre
+):
+
+    if not valor:
+
+        return None, None
+
+    try:
+
+        fecha = datetime.strptime(
+            valor,
+            "%Y-%m-%d"
+        ).date()
+
+    except ValueError:
+
+        return (
+            None,
+            Response(
+                {
+                    "success": False,
+                    "message": (
+                        f"{nombre} no es una fecha "
+                        "válida (formato YYYY-MM-DD)."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        )
+
+    return fecha, None
+
+
+# ============================================================
+# VALIDAR RANGO
+# ============================================================
+
+def _validar_rango(
+    fecha_inicio,
+    fecha_fin
+):
+
+    if (
+        fecha_inicio
+        and fecha_fin
+        and fecha_inicio > fecha_fin
+    ):
+
+        return Response(
+            {
+                "success": False,
+                "message": (
+                    "fecha_inicio no puede ser "
+                    "posterior a fecha_fin."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    return None
+
+
+# ============================================================
+# RESUMEN DEL DÍA
+# ============================================================
+
+class ReporteResumenDiaView(
+    APIView
+):
+
+    permission_classes = PERMISSION_ADMIN
+
+    def get(
+        self,
+        request
+    ):
+
+        fecha = request.query_params.get(
+            "fecha"
+        )
+
+        if not fecha:
+
+            from django.utils import timezone
+
+            fecha = timezone.localdate()
+
+        else:
+
+            fecha, error = _parsear_fecha(
+                fecha,
+                "fecha"
+            )
+
+            if error:
+
+                return error
+
+        data = reporte_resumen_dia(
+            fecha=fecha
+        )
+
+        serializer = (
+            ReporteResumenDiaSerializer(
+                data
+            )
+        )
+
+        return Response(
+            {
+                "success": True,
+                "data": serializer.data
+            },
+            status=status.HTTP_200_OK
+        )
 
 
 # ============================================================
 # REPORTE DE VENTAS
 # ============================================================
 
-class ReporteVentasView(APIView):
+class ReporteVentasView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_ADMIN
 
-    def get(self, request):
+    def get(
+        self,
+        request
+    ):
 
-        if not validar_admin(request):
-
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        fecha_inicio = request.query_params.get(
+        fecha_inicio, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_inicio"
+            ),
             "fecha_inicio"
         )
 
-        fecha_fin = request.query_params.get(
+        if error:
+            return error
+
+        fecha_fin, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_fin"
+            ),
             "fecha_fin"
         )
 
-        usuario_id = request.query_params.get(
-            "usuario"
+        if error:
+            return error
+
+        error_rango = _validar_rango(
+            fecha_inicio,
+            fecha_fin
         )
 
-        estado = request.query_params.get(
-            "estado"
+        if error_rango:
+            return error_rango
+
+        usuario_id = (
+            request.query_params.get(
+                "usuario"
+            )
         )
+
+        estado = (
+            request.query_params.get(
+                "estado"
+            )
+        )
+
+        # ----------------------------------------------------
+        # VALIDAR UUID USUARIO
+        # ----------------------------------------------------
+
+        if usuario_id:
+
+            try:
+
+                uuid.UUID(
+                    str(usuario_id)
+                )
+
+            except (
+                ValueError,
+                TypeError,
+                AttributeError
+            ):
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "usuario no es un "
+                            "identificador válido."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # ----------------------------------------------------
+        # VALIDAR ESTADO DE VENTA
+        # ----------------------------------------------------
+
+        if estado:
+
+            estados_validos = {
+                valor
+                for valor, _ in Venta.ESTADOS
+            }
+
+            if estado not in estados_validos:
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "El estado de venta "
+                            "no es válido."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         data = reporte_ventas(
             fecha_inicio=fecha_inicio,
@@ -83,20 +328,18 @@ class ReporteVentasView(APIView):
             estado=estado
         )
 
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
+
         serializer = ReporteVentaSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de ventas generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -104,44 +347,62 @@ class ReporteVentasView(APIView):
 # PRODUCTOS MÁS VENDIDOS
 # ============================================================
 
-class ReporteProductosView(APIView):
+class ReporteProductosView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_ADMIN
 
-    def get(self, request):
+    def get(
+        self,
+        request
+    ):
 
-        if not validar_admin(request):
+        fecha_inicio, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_inicio"
+            ),
+            "fecha_inicio"
+        )
 
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+        if error:
+            return error
 
-        data = reporte_productos()
+        fecha_fin, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_fin"
+            ),
+            "fecha_fin"
+        )
+
+        if error:
+            return error
+
+        error_rango = _validar_rango(
+            fecha_inicio,
+            fecha_fin
+        )
+
+        if error_rango:
+            return error_rango
+
+        data = reporte_productos(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin
+        )
+
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
 
         serializer = ReporteProductoSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de productos "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -149,44 +410,31 @@ class ReporteProductosView(APIView):
 # INVENTARIO
 # ============================================================
 
-class ReporteInventarioView(APIView):
+class ReporteInventarioView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_EMPLEADO
 
-    def get(self, request):
-
-        if not validar_admin(request):
-
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+    def get(
+        self,
+        request
+    ):
 
         data = reporte_inventario()
 
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
+
         serializer = ReporteInventarioSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de inventario "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -194,44 +442,31 @@ class ReporteInventarioView(APIView):
 # STOCK BAJO
 # ============================================================
 
-class ReporteStockBajoView(APIView):
+class ReporteStockBajoView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_EMPLEADO
 
-    def get(self, request):
-
-        if not validar_admin(request):
-
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+    def get(
+        self,
+        request
+    ):
 
         data = reporte_stock_bajo()
 
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
+
         serializer = ReporteStockBajoSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de stock bajo "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -239,44 +474,62 @@ class ReporteStockBajoView(APIView):
 # CORTES DE CAJA
 # ============================================================
 
-class ReporteCortesView(APIView):
+class ReporteCortesView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_ADMIN
 
-    def get(self, request):
+    def get(
+        self,
+        request
+    ):
 
-        if not validar_admin(request):
+        fecha_inicio, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_inicio"
+            ),
+            "fecha_inicio"
+        )
 
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+        if error:
+            return error
 
-        data = reporte_cortes()
+        fecha_fin, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_fin"
+            ),
+            "fecha_fin"
+        )
+
+        if error:
+            return error
+
+        error_rango = _validar_rango(
+            fecha_inicio,
+            fecha_fin
+        )
+
+        if error_rango:
+            return error_rango
+
+        data = reporte_cortes(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin
+        )
+
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
 
         serializer = ReporteCorteSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de cortes de caja "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -284,44 +537,62 @@ class ReporteCortesView(APIView):
 # DEVOLUCIONES
 # ============================================================
 
-class ReporteDevolucionesView(APIView):
+class ReporteDevolucionesView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_ADMIN
 
-    def get(self, request):
+    def get(
+        self,
+        request
+    ):
 
-        if not validar_admin(request):
+        fecha_inicio, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_inicio"
+            ),
+            "fecha_inicio"
+        )
 
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+        if error:
+            return error
 
-        data = reporte_devoluciones()
+        fecha_fin, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_fin"
+            ),
+            "fecha_fin"
+        )
+
+        if error:
+            return error
+
+        error_rango = _validar_rango(
+            fecha_inicio,
+            fecha_fin
+        )
+
+        if error_rango:
+            return error_rango
+
+        data = reporte_devoluciones(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin
+        )
+
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
 
         serializer = ReporteDevolucionSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de devoluciones "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -329,44 +600,95 @@ class ReporteDevolucionesView(APIView):
 # GARANTÍAS
 # ============================================================
 
-class ReporteGarantiasView(APIView):
+class ReporteGarantiasView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_ADMIN
 
-    def get(self, request):
+    def get(
+        self,
+        request
+    ):
 
-        if not validar_admin(request):
+        fecha_inicio, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_inicio"
+            ),
+            "fecha_inicio"
+        )
 
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
+        if error:
+            return error
+
+        fecha_fin, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_fin"
+            ),
+            "fecha_fin"
+        )
+
+        if error:
+            return error
+
+        error_rango = _validar_rango(
+            fecha_inicio,
+            fecha_fin
+        )
+
+        if error_rango:
+            return error_rango
+
+        estado = request.query_params.get(
+            "estado"
+        )
+
+        # ----------------------------------------------------
+        # VALIDAR ESTADO DE GARANTÍA
+        # ----------------------------------------------------
+
+        if estado:
+
+            campo_estado = Garantia._meta.get_field(
+                "estado"
             )
 
-        data = reporte_garantias()
+            estados_validos = {
+                valor
+                for valor, _ in campo_estado.choices
+            }
+
+            if estado not in estados_validos:
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "El estado de garantía "
+                            "no es válido."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        data = reporte_garantias(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            estado=estado
+        )
+
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
 
         serializer = ReporteGarantiaSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de garantías "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -374,42 +696,89 @@ class ReporteGarantiasView(APIView):
 # MOVIMIENTOS DE INVENTARIO
 # ============================================================
 
-class ReporteMovimientosView(APIView):
+class ReporteMovimientosView(
+    APIView
+):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    permission_classes = PERMISSION_ADMIN
 
-    def get(self, request):
+    def get(
+        self,
+        request
+    ):
 
-        if not validar_admin(request):
+        fecha_inicio, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_inicio"
+            ),
+            "fecha_inicio"
+        )
 
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "No tienes permisos para "
-                        "consultar este reporte."
-                    )
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
+        if error:
+            return error
 
-        data = reporte_movimientos()
+        fecha_fin, error = _parsear_fecha(
+            request.query_params.get(
+                "fecha_fin"
+            ),
+            "fecha_fin"
+        )
+
+        if error:
+            return error
+
+        error_rango = _validar_rango(
+            fecha_inicio,
+            fecha_fin
+        )
+
+        if error_rango:
+            return error_rango
+
+        tipo = request.query_params.get(
+            "tipo"
+        )
+
+        # ----------------------------------------------------
+        # VALIDAR TIPO DE MOVIMIENTO
+        # ----------------------------------------------------
+
+        if tipo:
+
+            tipos_validos = {
+                valor
+                for valor, _ in MovimientoInventario.TIPOS
+            }
+
+            if tipo not in tipos_validos:
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "El tipo de movimiento "
+                            "no es válido."
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        data = reporte_movimientos(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            tipo=tipo
+        )
+
+        paginator, pagina = _paginar(
+            request,
+            data
+        )
 
         serializer = ReporteMovimientoSerializer(
-            data,
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Reporte de movimientos "
-                    "generado correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )

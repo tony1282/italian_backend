@@ -3,6 +3,8 @@ from rest_framework.response import Response
 
 from rest_framework.permissions import IsAuthenticated
 
+from usuarios.permissions import IsAdmin
+
 from .models import Categoria
 from .serializers import CategoriaSerializer
 
@@ -17,9 +19,23 @@ class CategoriaViewSet(viewsets.ModelViewSet):
 
     serializer_class = CategoriaSerializer
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+
+    def get_permissions(self):
+
+        if self.action in [
+            "create",
+            "update",
+            "partial_update",
+            "destroy"
+        ]:
+
+            return [
+                IsAdmin()
+            ]
+
+        return [
+            IsAuthenticated()
+        ]
 
     # ============================================================
     # CREAR CATEGORÍA
@@ -116,9 +132,11 @@ class CategoriaViewSet(viewsets.ModelViewSet):
         return Response(
 
             {
-                "mensaje": (
-                    "Categoría desactivada correctamente"
-                )
+                "success": True,
+                "message": (
+                    "Categoría desactivada correctamente."
+                ),
+                "data": None
             },
 
             status=status.HTTP_200_OK

@@ -1,9 +1,14 @@
 from rest_framework import serializers
 
-from .models import Devolucion, DetalleDevolucion
+from .models import (
+    Devolucion,
+    DetalleDevolucion
+)
 
 
-class ProductoDevolucionSerializer(serializers.Serializer):
+class ProductoDevolucionSerializer(
+    serializers.Serializer
+):
 
     detalle_venta_id = serializers.UUIDField()
 
@@ -12,11 +17,12 @@ class ProductoDevolucionSerializer(serializers.Serializer):
     )
 
 
-
-class CrearDevolucionSerializer(serializers.Serializer):
+class CrearDevolucionSerializer(
+    serializers.Serializer
+):
 
     venta_id = serializers.UUIDField()
-    
+
     metodo_pago_reembolso_id = serializers.UUIDField()
 
     tipo = serializers.ChoiceField(
@@ -27,30 +33,29 @@ class CrearDevolucionSerializer(serializers.Serializer):
         ]
     )
 
-    motivo = serializers.CharField()
-
+    motivo = serializers.CharField(
+        allow_blank=False
+    )
 
     productos = ProductoDevolucionSerializer(
-        many=True
+        many=True,
+        allow_empty=False
     )
 
 
-
-class DetalleDevolucionSerializer(serializers.ModelSerializer):
+class DetalleDevolucionSerializer(
+    serializers.ModelSerializer
+):
 
     producto = serializers.CharField(
-        source="detalle_venta.variante.producto.nombre"
+        source="detalle_venta.variante.producto.nombre",
+        read_only=True
     )
 
     variante = serializers.CharField(
-        source="detalle_venta.variante.nombre"
+        source="detalle_venta.variante.nombre",
+        read_only=True
     )
-    
-    metodo_pago_reembolso = serializers.CharField(
-        source="metodo_pago_reembolso.nombre",
-        allow_null=True
-    )
-
 
     class Meta:
 
@@ -65,24 +70,40 @@ class DetalleDevolucionSerializer(serializers.ModelSerializer):
             "subtotal"
         ]
 
+        read_only_fields = [
+            "id",
+            "producto",
+            "variante",
+            "cantidad",
+            "precio_original",
+            "subtotal"
+        ]
 
 
-class DevolucionSerializer(serializers.ModelSerializer):
+class DevolucionSerializer(
+    serializers.ModelSerializer
+):
 
     venta = serializers.CharField(
-        source="venta.folio"
+        source="venta.folio",
+        read_only=True
     )
-
 
     usuario = serializers.CharField(
-        source="usuario.nombre"
+        source="usuario.nombre",
+        read_only=True
     )
 
+    metodo_pago_reembolso = serializers.CharField(
+        source="metodo_pago_reembolso.nombre",
+        allow_null=True,
+        read_only=True
+    )
 
     detalles = DetalleDevolucionSerializer(
-        many=True
+        many=True,
+        read_only=True
     )
-
 
     class Meta:
 
@@ -95,6 +116,17 @@ class DevolucionSerializer(serializers.ModelSerializer):
             "metodo_pago_reembolso",
             "tipo",
             "motivo",
+            "estado",
+            "total_devuelto",
+            "fecha",
+            "detalles"
+        ]
+
+        read_only_fields = [
+            "id",
+            "venta",
+            "usuario",
+            "metodo_pago_reembolso",
             "estado",
             "total_devuelto",
             "fecha",

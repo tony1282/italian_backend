@@ -65,38 +65,6 @@ class AprobarGarantiaSerializer(serializers.Serializer):
             )
 
         return data
-    resolucion = serializers.ChoiceField(
-        choices=[
-            "REEMPLAZO",
-            "CAMBIO_PRODUCTO",
-            "REPARACION"
-        ]
-    )
-
-    # Obligatorio únicamente cuando la resolución
-    # sea CAMBIO_PRODUCTO
-    variante_nueva_id = serializers.UUIDField(
-        required=False,
-        allow_null=True
-    )
-
-    observaciones = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True
-    )
-
-    def validate(self, data):
-
-        if (
-            data.get("resolucion") == "CAMBIO_PRODUCTO"
-            and not data.get("variante_nueva_id")
-        ):
-            raise serializers.ValidationError(
-                "variante_nueva_id es obligatorio para CAMBIO_PRODUCTO."
-            )
-
-        return data
 
 
 class RechazarGarantiaSerializer(serializers.Serializer):

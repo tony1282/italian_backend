@@ -77,7 +77,7 @@ urlpatterns = [
     ),
     
     path(
-        "api/",
+        "api/reportes/",
         include("reportes.urls")
     ),
     

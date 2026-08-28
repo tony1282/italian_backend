@@ -1,5 +1,6 @@
-from django.db import models
 import uuid
+
+from django.db import models
 
 from variantes.models import Variante
 from usuarios.models import Usuario
@@ -33,7 +34,15 @@ class MovimientoInventario(models.Model):
         choices=TIPOS
     )
 
+    stock_anterior = models.PositiveIntegerField(
+        default=0
+    )
+
     cantidad = models.PositiveIntegerField()
+
+    stock_nuevo = models.PositiveIntegerField(
+        default=0
+    )
 
     observaciones = models.TextField(
         blank=True,
@@ -51,4 +60,9 @@ class MovimientoInventario(models.Model):
     )
 
     def __str__(self):
-        return f"{self.tipo} - {self.variante.nombre}"
+
+        return (
+            f"{self.tipo} - "
+            f"{self.variante.nombre} - "
+            f"{self.cantidad}"
+        )

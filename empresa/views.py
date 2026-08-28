@@ -5,15 +5,25 @@ from rest_framework import status
 
 from .models import Empresa
 from .serializers import EmpresaSerializer
+from .permissions import EsAdministrador
 
 from bitacora.services import registrar_bitacora
 
 
 class EmpresaView(APIView):
 
-    permission_classes = [
-        IsAuthenticated
-    ]
+    def get_permissions(self):
+
+        if self.request.method == "GET":
+
+            return [
+                IsAuthenticated()
+            ]
+
+        return [
+            IsAuthenticated(),
+            EsAdministrador()
+        ]
 
 
     def get(self, request):

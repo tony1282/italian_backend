@@ -22,6 +22,10 @@ from variantes.models import Variante
 from bitacora.services import registrar_bitacora
 
 
+# ==============================================================
+# CREAR DEVOLUCIÓN
+# ==============================================================
+
 @transaction.atomic
 def crear_devolucion(
     data,
@@ -32,13 +36,18 @@ def crear_devolucion(
 
     productos = data["productos"]
 
-
-    # 1. Buscar venta
+    # ==========================================================
+    # 1. BUSCAR Y BLOQUEAR VENTA
+    # ==========================================================
 
     try:
 
-        venta = Venta.objects.get(
-            id=venta_id
+        venta = (
+            Venta.objects
+            .select_for_update()
+            .get(
+                id=venta_id
+            )
         )
 
     except Venta.DoesNotExist:
@@ -47,8 +56,9 @@ def crear_devolucion(
             "La venta no existe."
         )
 
-
-    # 2. Validar estado de venta
+    # ==========================================================
+    # 2. VALIDAR ESTADO DE VENTA
+    # ==========================================================
 
     if venta.estado == "CANCELADA":
 
@@ -56,12 +66,25 @@ def crear_devolucion(
             "No se puede devolver una venta cancelada."
         )
 
+    if venta.estado == "DEVUELTA":
 
-    # 3. Validar plazo de devolución
+        raise Exception(
+            "La venta ya fue devuelta completamente."
+        )
+
+    # ==========================================================
+    # 3. VALIDAR PLAZO DE DEVOLUCIÓN
+    # ==========================================================
 
     if data["tipo"] == "NORMAL":
 
         empresa = Empresa.objects.first()
+
+        if not empresa:
+
+            raise Exception(
+                "No existe configuración de empresa."
+            )
 
         dias = empresa.dias_devolucion
 
@@ -71,18 +94,15 @@ def crear_devolucion(
             venta.fecha
         ).days
 
-
         if diferencia > dias:
 
             raise Exception(
                 "El periodo de devolución expiró."
             )
 
-
-    total = Decimal("0.00")
-
-
-    # 4. Buscar método de reembolso
+    # ==========================================================
+    # 4. VALIDAR MÉTODO DE REEMBOLSO
+    # ==========================================================
 
     metodo_pago_reembolso_id = data[
         "metodo_pago_reembolso_id"
@@ -90,9 +110,12 @@ def crear_devolucion(
 
     try:
 
-        metodo_pago_reembolso = MetodoPago.objects.get(
-            id=metodo_pago_reembolso_id,
-            activo=True
+        metodo_pago_reembolso = (
+            MetodoPago.objects
+            .get(
+                id=metodo_pago_reembolso_id,
+                activo=True
+            )
         )
 
     except MetodoPago.DoesNotExist:
@@ -101,8 +124,9 @@ def crear_devolucion(
             "El método de reembolso no existe o está inactivo."
         )
 
-
-    # 5. Crear cabecera
+    # ==========================================================
+    # 5. CREAR CABECERA
+    # ==========================================================
 
     devolucion = Devolucion.objects.create(
 
@@ -110,7 +134,9 @@ def crear_devolucion(
 
         usuario=usuario,
 
-        metodo_pago_reembolso=metodo_pago_reembolso,
+        metodo_pago_reembolso=(
+            metodo_pago_reembolso
+        ),
 
         tipo=data["tipo"],
 
@@ -120,19 +146,26 @@ def crear_devolucion(
 
     )
 
+    # ==========================================================
+    # 6. CREAR DETALLES
+    # ==========================================================
 
-    # 6. Crear detalles
+    total = Decimal("0.00")
 
     for item in productos:
 
         try:
 
-            detalle_venta = DetalleVenta.objects.get(
+            detalle_venta = (
+                DetalleVenta.objects
+                .select_for_update()
+                .get(
 
-                id=item["detalle_venta_id"],
+                    id=item["detalle_venta_id"],
 
-                venta=venta
+                    venta=venta
 
+                )
             )
 
         except DetalleVenta.DoesNotExist:
@@ -141,22 +174,36 @@ def crear_devolucion(
                 "El producto no pertenece a la venta."
             )
 
-
         cantidad = item["cantidad"]
 
+        # ------------------------------------------------------
+        # VALIDAR CANTIDAD
+        # ------------------------------------------------------
 
-        # Validar cantidad ya devuelta
+        if cantidad <= 0:
+
+            raise Exception(
+                "La cantidad debe ser mayor a cero."
+            )
+
+        # ------------------------------------------------------
+        # CANTIDAD YA DEVUELTA
+        # ------------------------------------------------------
 
         cantidad_devuelta = (
-            detalle_venta
-            .devoluciones
+            DetalleDevolucion.objects
+            .filter(
+                detalle_venta=detalle_venta,
+                devolucion__estado__in=[
+                    "PENDIENTE",
+                    "APROBADA"
+                ]
+            )
             .aggregate(
                 total=models.Sum("cantidad")
-            )
-            ["total"]
+            )["total"]
             or 0
         )
-
 
         disponible = (
             detalle_venta.cantidad
@@ -164,21 +211,20 @@ def crear_devolucion(
             cantidad_devuelta
         )
 
-
         if cantidad > disponible:
 
             raise Exception(
-                "La cantidad devuelta supera la vendida."
+                "La cantidad devuelta supera la cantidad disponible."
             )
 
-
-        # Calcular subtotal de la devolución
+        # ------------------------------------------------------
+        # SUBTOTAL
+        # ------------------------------------------------------
 
         subtotal = (
             cantidad *
             detalle_venta.precio_unitario
         )
-
 
         DetalleDevolucion.objects.create(
 
@@ -188,17 +234,19 @@ def crear_devolucion(
 
             cantidad=cantidad,
 
-            precio_original=detalle_venta.precio_unitario,
+            precio_original=(
+                detalle_venta.precio_unitario
+            ),
 
             subtotal=subtotal
 
         )
 
-
         total += subtotal
 
-
-    # 7. Calcular IVA proporcional de la venta
+    # ==========================================================
+    # 7. CALCULAR IVA PROPORCIONAL
+    # ==========================================================
 
     if venta.subtotal > 0:
 
@@ -216,25 +264,32 @@ def crear_devolucion(
 
         iva_devolucion = Decimal("0.00")
 
-
-    # 8. Calcular total final de devolución
+    # ==========================================================
+    # 8. TOTAL FINAL
+    # ==========================================================
 
     total_devuelto = (
         total +
         iva_devolucion
     )
 
+    # ==========================================================
+    # 9. GUARDAR TOTAL
+    # ==========================================================
 
-    # 9. Guardar total
+    devolucion.total_devuelto = (
+        total_devuelto
+    )
 
-    devolucion.total_devuelto = total_devuelto
+    devolucion.save(
+        update_fields=[
+            "total_devuelto"
+        ]
+    )
 
-    devolucion.save()
-
-
-    # ==========================================
+    # ==========================================================
     # BITÁCORA
-    # ==========================================
+    # ==========================================================
 
     registrar_bitacora(
 
@@ -268,9 +323,12 @@ def crear_devolucion(
 
     )
 
-
     return devolucion
 
+
+# ==============================================================
+# APROBAR DEVOLUCIÓN
+# ==============================================================
 
 @transaction.atomic
 def aprobar_devolucion(
@@ -278,7 +336,9 @@ def aprobar_devolucion(
     usuario
 ):
 
-    # 1. Buscar y bloquear la devolución
+    # ==========================================================
+    # 1. BUSCAR Y BLOQUEAR DEVOLUCIÓN
+    # ==========================================================
 
     try:
 
@@ -296,8 +356,9 @@ def aprobar_devolucion(
             "La devolución no existe."
         )
 
-
-    # 2. Validar estado
+    # ==========================================================
+    # 2. VALIDAR ESTADO
+    # ==========================================================
 
     if devolucion.estado != "PENDIENTE":
 
@@ -305,8 +366,9 @@ def aprobar_devolucion(
             "Solo se pueden aprobar devoluciones pendientes."
         )
 
-
-    # 3. Buscar y bloquear la venta
+    # ==========================================================
+    # 3. BUSCAR Y BLOQUEAR VENTA
+    # ==========================================================
 
     try:
 
@@ -324,8 +386,9 @@ def aprobar_devolucion(
             "La venta asociada no existe."
         )
 
-
-    # 4. Validar venta
+    # ==========================================================
+    # 4. VALIDAR VENTA
+    # ==========================================================
 
     if venta.estado == "CANCELADA":
 
@@ -334,8 +397,15 @@ def aprobar_devolucion(
             "de una venta cancelada."
         )
 
+    if venta.estado == "DEVUELTA":
 
-    # 5. Validar método de reembolso
+        raise Exception(
+            "La venta ya fue devuelta completamente."
+        )
+
+    # ==========================================================
+    # 5. VALIDAR MÉTODO DE REEMBOLSO
+    # ==========================================================
 
     if not devolucion.metodo_pago_reembolso:
 
@@ -343,11 +413,13 @@ def aprobar_devolucion(
             "La devolución no tiene un método de reembolso."
         )
 
+    metodo_pago = (
+        devolucion.metodo_pago_reembolso
+    )
 
-    metodo_pago = devolucion.metodo_pago_reembolso
-
-
-    # 6. Obtener detalles
+    # ==========================================================
+    # 6. OBTENER DETALLES
+    # ==========================================================
 
     detalles = list(
         devolucion.detalles.select_related(
@@ -355,19 +427,21 @@ def aprobar_devolucion(
         )
     )
 
-
     if not detalles:
 
         raise Exception(
             "La devolución no tiene productos."
         )
 
-
-    # 7. Validar nuevamente cantidades
+    # ==========================================================
+    # 7. VALIDAR NUEVAMENTE CANTIDADES
+    # ==========================================================
 
     for detalle in detalles:
 
-        detalle_venta = detalle.detalle_venta
+        detalle_venta = (
+            detalle.detalle_venta
+        )
 
         cantidad_aprobada = (
             DetalleDevolucion.objects
@@ -381,9 +455,31 @@ def aprobar_devolucion(
             or 0
         )
 
+        # ------------------------------------------------------
+        # También considerar otras devoluciones pendientes
+        # ------------------------------------------------------
+
+        cantidad_pendiente = (
+            DetalleDevolucion.objects
+            .filter(
+                detalle_venta=detalle_venta,
+                devolucion__estado="PENDIENTE"
+            )
+            .exclude(
+                devolucion=devolucion
+            )
+            .aggregate(
+                total=models.Sum("cantidad")
+            )["total"]
+            or 0
+        )
+
         disponible = (
             detalle_venta.cantidad
-            - cantidad_aprobada
+            -
+            cantidad_aprobada
+            -
+            cantidad_pendiente
         )
 
         if detalle.cantidad > disponible:
@@ -393,13 +489,20 @@ def aprobar_devolucion(
                 "la cantidad disponible."
             )
 
-
-    # 8. Buscar corte abierto de la MISMA CAJA
-    #    únicamente si el reembolso es efectivo
+    # ==========================================================
+    # 8. BUSCAR CORTE ABIERTO DE LA MISMA CAJA
+    #    SOLO PARA REEMBOLSO EN EFECTIVO
+    # ==========================================================
 
     corte = None
 
     if metodo_pago.nombre == "EFECTIVO":
+
+        if not venta.corte_caja:
+
+            raise Exception(
+                "La venta no tiene un corte de caja asociado."
+            )
 
         corte = (
             CorteCaja.objects
@@ -418,14 +521,19 @@ def aprobar_devolucion(
                 "para registrar el reembolso."
             )
 
-
-    # 9. Reponer stock
+    # ==========================================================
+    # 9. REPONER STOCK
+    # ==========================================================
 
     for detalle in detalles:
 
-        detalle_venta = detalle.detalle_venta
+        detalle_venta = (
+            detalle.detalle_venta
+        )
 
-        # Bloquear variante
+        # ------------------------------------------------------
+        # BLOQUEAR VARIANTE
+        # ------------------------------------------------------
 
         variante = (
             Variante.objects
@@ -435,18 +543,26 @@ def aprobar_devolucion(
             )
         )
 
-        # Reponer stock
+        # ------------------------------------------------------
+        # STOCK ANTERIOR
+        # ------------------------------------------------------
 
-        variante.stock += detalle.cantidad
-
-        variante.save(
-            update_fields=[
-                "stock"
-            ]
+        stock_anterior = (
+            variante.stock
         )
 
+        # ------------------------------------------------------
+        # STOCK NUEVO
+        # ------------------------------------------------------
 
-        # Registrar movimiento de inventario
+        stock_nuevo = (
+            stock_anterior +
+            detalle.cantidad
+        )
+
+        # ------------------------------------------------------
+        # REGISTRAR MOVIMIENTO
+        # ------------------------------------------------------
 
         MovimientoInventario.objects.create(
 
@@ -454,18 +570,37 @@ def aprobar_devolucion(
 
             tipo="DEVOLUCION",
 
+            stock_anterior=stock_anterior,
+
             cantidad=detalle.cantidad,
+
+            stock_nuevo=stock_nuevo,
 
             observaciones=(
                 f"Devolución {devolucion.id}"
             ),
 
             usuario=usuario
+
         )
 
+        # ------------------------------------------------------
+        # ACTUALIZAR STOCK
+        # ------------------------------------------------------
 
-    # 10. Registrar reembolso en caja
-    #     únicamente para efectivo
+        variante.stock = stock_nuevo
+
+        variante.save(
+            update_fields=[
+                "stock",
+                "fecha_actualizacion"
+            ]
+        )
+
+    # ==========================================================
+    # 10. REGISTRAR REEMBOLSO EN CAJA
+    #     SOLO PARA EFECTIVO
+    # ==========================================================
 
     if metodo_pago.nombre == "EFECTIVO":
 
@@ -487,10 +622,12 @@ def aprobar_devolucion(
             ),
 
             usuario=usuario
+
         )
 
-
-    # 11. Aprobar devolución
+    # ==========================================================
+    # 11. APROBAR DEVOLUCIÓN
+    # ==========================================================
 
     devolucion.estado = "APROBADA"
 
@@ -500,10 +637,9 @@ def aprobar_devolucion(
         ]
     )
 
-
-    # ==========================================
+    # ==========================================================
     # BITÁCORA
-    # ==========================================
+    # ==========================================================
 
     registrar_bitacora(
 
@@ -532,12 +668,15 @@ def aprobar_devolucion(
 
     )
 
-
-    # 12. Determinar si toda la venta fue devuelta
+    # ==========================================================
+    # 12. DETERMINAR SI TODA LA VENTA FUE DEVUELTA
+    # ==========================================================
 
     venta_completamente_devuelta = True
 
-    detalles_venta = venta.detalles.all()
+    detalles_venta = (
+        venta.detalles.all()
+    )
 
     for detalle_venta in detalles_venta:
 
@@ -559,8 +698,9 @@ def aprobar_devolucion(
 
             break
 
-
-    # 13. Actualizar estado de venta
+    # ==========================================================
+    # 13. ACTUALIZAR ESTADO DE VENTA
+    # ==========================================================
 
     if venta_completamente_devuelta:
 
@@ -572,9 +712,12 @@ def aprobar_devolucion(
             ]
         )
 
-
     return devolucion
 
+
+# ==============================================================
+# RECHAZAR DEVOLUCIÓN
+# ==============================================================
 
 @transaction.atomic
 def cambiar_estado_devolucion(
@@ -583,10 +726,18 @@ def cambiar_estado_devolucion(
     usuario
 ):
 
+    # ==========================================================
+    # BUSCAR Y BLOQUEAR
+    # ==========================================================
+
     try:
 
-        devolucion = Devolucion.objects.get(
-            id=devolucion_id
+        devolucion = (
+            Devolucion.objects
+            .select_for_update()
+            .get(
+                id=devolucion_id
+            )
         )
 
     except Devolucion.DoesNotExist:
@@ -595,6 +746,9 @@ def cambiar_estado_devolucion(
             "La devolución no existe."
         )
 
+    # ==========================================================
+    # VALIDAR ESTADO ACTUAL
+    # ==========================================================
 
     if devolucion.estado != "PENDIENTE":
 
@@ -603,6 +757,9 @@ def cambiar_estado_devolucion(
             "devoluciones pendientes."
         )
 
+    # ==========================================================
+    # SOLO RECHAZAR
+    # ==========================================================
 
     if nuevo_estado != "RECHAZADA":
 
@@ -611,6 +768,9 @@ def cambiar_estado_devolucion(
             "debe utilizarse el proceso de aprobación."
         )
 
+    # ==========================================================
+    # CAMBIAR ESTADO
+    # ==========================================================
 
     devolucion.estado = "RECHAZADA"
 
@@ -620,10 +780,9 @@ def cambiar_estado_devolucion(
         ]
     )
 
-
-    # ==========================================
+    # ==========================================================
     # BITÁCORA
-    # ==========================================
+    # ==========================================================
 
     registrar_bitacora(
 
@@ -640,7 +799,8 @@ def cambiar_estado_devolucion(
             f"{usuario.nombre} "
             f"{usuario.apellido}. "
 
-            f"Venta: '{devolucion.venta.folio}'. "
+            f"Venta: "
+            f"'{devolucion.venta.folio}'. "
 
             f"Motivo registrado: "
             f"{devolucion.motivo}."
@@ -648,6 +808,5 @@ def cambiar_estado_devolucion(
         )
 
     )
-
 
     return devolucion

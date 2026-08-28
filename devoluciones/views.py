@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from .permissions import EsAdministrador
+
 from .serializers import (
     CrearDevolucionSerializer,
     DevolucionSerializer
@@ -284,7 +286,8 @@ class DevolucionDetailView(APIView):
 class DevolucionAprobarView(APIView):
 
     permission_classes = [
-        IsAuthenticated
+        IsAuthenticated,
+        EsAdministrador
     ]
 
 
@@ -332,7 +335,8 @@ class DevolucionAprobarView(APIView):
 class DevolucionRechazarView(APIView):
 
     permission_classes = [
-        IsAuthenticated
+        IsAuthenticated,
+        EsAdministrador
     ]
 
 

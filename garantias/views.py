@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
 
 from usuarios.permissions import IsAdmin
 
@@ -21,6 +22,13 @@ from .services import (
 )
 
 
+class GarantiaPagination(PageNumberPagination):
+
+    page_size = 50
+
+    max_page_size = 200
+
+
 class GarantiaListCreateView(APIView):
 
     permission_classes = [IsAuthenticated]
@@ -37,17 +45,20 @@ class GarantiaListCreateView(APIView):
             "variante_nueva"
         ).all()
 
-        serializer = GarantiaSerializer(
+        paginator = GarantiaPagination()
+
+        pagina = paginator.paginate_queryset(
             garantias,
+            request
+        )
+
+        serializer = GarantiaSerializer(
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
     # POST /api/garantias/

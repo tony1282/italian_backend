@@ -1,11 +1,12 @@
 from django.urls import path
 
 from .views import (
+    ReporteResumenDiaView,
     ReporteVentasView,
+    ReporteProductosView,
     ReporteInventarioView,
     ReporteStockBajoView,
     ReporteCortesView,
-    ReporteProductosView,
     ReporteDevolucionesView,
     ReporteGarantiasView,
     ReporteMovimientosView,
@@ -14,52 +15,93 @@ from .views import (
 
 urlpatterns = [
 
+    # ========================================================
+    # RESUMEN
+    # ========================================================
+
     path(
-        "reportes/ventas",
+        "resumen-dia/",
+        ReporteResumenDiaView.as_view(),
+        name="reporte-resumen-dia"
+    ),
+
+    # ========================================================
+    # VENTAS
+    # ========================================================
+
+    path(
+        "ventas/",
         ReporteVentasView.as_view(),
         name="reporte-ventas"
     ),
 
-    path(
-        "reportes/inventario",
-        ReporteInventarioView.as_view(),
-        name="reporte-inventario"
-    ),
+    # ========================================================
+    # PRODUCTOS
+    # ========================================================
 
     path(
-        "reportes/stock-bajo",
-        ReporteStockBajoView.as_view(),
-        name="reporte-stock-bajo"
-    ),
-
-    path(
-        "reportes/cortes",
-        ReporteCortesView.as_view(),
-        name="reporte-cortes"
-    ),
-
-    path(
-        "reportes/productos",
+        "productos/",
         ReporteProductosView.as_view(),
         name="reporte-productos"
     ),
 
+    # ========================================================
+    # INVENTARIO
+    # ========================================================
+
     path(
-        "reportes/devoluciones",
+        "inventario/",
+        ReporteInventarioView.as_view(),
+        name="reporte-inventario"
+    ),
+
+    # ========================================================
+    # STOCK BAJO
+    # ========================================================
+
+    path(
+        "stock-bajo/",
+        ReporteStockBajoView.as_view(),
+        name="reporte-stock-bajo"
+    ),
+
+    # ========================================================
+    # CORTES
+    # ========================================================
+
+    path(
+        "cortes/",
+        ReporteCortesView.as_view(),
+        name="reporte-cortes"
+    ),
+
+    # ========================================================
+    # DEVOLUCIONES
+    # ========================================================
+
+    path(
+        "devoluciones/",
         ReporteDevolucionesView.as_view(),
         name="reporte-devoluciones"
     ),
 
+    # ========================================================
+    # GARANTÍAS
+    # ========================================================
+
     path(
-        "reportes/garantias",
+        "garantias/",
         ReporteGarantiasView.as_view(),
         name="reporte-garantias"
     ),
 
+    # ========================================================
+    # MOVIMIENTOS
+    # ========================================================
+
     path(
-        "reportes/movimientos",
+        "movimientos/",
         ReporteMovimientosView.as_view(),
         name="reporte-movimientos"
     ),
-
 ]

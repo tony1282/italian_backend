@@ -1,27 +1,27 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
+
+from usuarios.permissions import IsAdmin
 
 from .models import Bitacora
 from .serializers import BitacoraSerializer
 
 
+class BitacoraPagination(PageNumberPagination):
+
+    page_size = 50
+
+    max_page_size = 200
+
+
 class BitacoraView(APIView):
 
     permission_classes = [
-        IsAuthenticated
+        IsAdmin
     ]
 
     def get(self, request):
-
-        if request.user.rol != 1:
-            return Response(
-                {
-                    "success": False,
-                    "message": "No tienes permisos para consultar la bitácora."
-                },
-                status=403
-            )
 
         registros = (
             Bitacora.objects
@@ -29,15 +29,18 @@ class BitacoraView(APIView):
             .all()
         )
 
-        serializer = BitacoraSerializer(
+        paginator = BitacoraPagination()
+
+        pagina = paginator.paginate_queryset(
             registros,
+            request
+        )
+
+        serializer = BitacoraSerializer(
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "message": "Registros de bitácora obtenidos correctamente.",
-                "data": serializer.data
-            }
+        return paginator.get_paginated_response(
+            serializer.data
         )

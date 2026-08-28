@@ -40,8 +40,9 @@ CSRF_TRUSTED_ORIGINS = [
     "https://toronto-katrina-care-pharmacy.trycloudflare.com",
 ]
 
+# En producción cambiar a False y listar solo los orígenes permitidos.
+# Ejemplo: CORS_ALLOWED_ORIGINS = ["https://tu-frontend.com"]
 CORS_ALLOW_ALL_ORIGINS = True
-
 
 
 # Application definition
@@ -81,25 +82,67 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
 
+    # --------------------------------------------------------
+    # Autenticación
+    # --------------------------------------------------------
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 
+    # --------------------------------------------------------
+    # Permiso por defecto: cualquier vista sin permiso
+    # explícito queda bloqueada para no-autenticados.
+    # --------------------------------------------------------
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+
+    # --------------------------------------------------------
+    # Rate limiting global
+    # anon  : peticiones sin token (solo login/refresh)
+    # user  : peticiones autenticadas
+    # login : throttle específico del endpoint de login
+    # --------------------------------------------------------
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+
     "DEFAULT_THROTTLE_RATES": {
-
+        "anon":  "60/min",
+        "user":  "300/min",
         "login": "10/min",
-
     },
+
+    # --------------------------------------------------------
+    # Paginación global con formato estándar del proyecto.
+    # --------------------------------------------------------
+    "DEFAULT_PAGINATION_CLASS": "config.pagination.StandardPagination",
+    "PAGE_SIZE": 50,
+
+    # --------------------------------------------------------
+    # En producción solo JSON, sin Browsable API.
+    # --------------------------------------------------------
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ] if not DEBUG else [
+        "rest_framework.renderers.JSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME" : timedelta(hours=1),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    
-    "ROTATE_REFRESH_TOKENS": True,
-    
-    "BLACKLIST_AFTER_ROTATION": True
-    
+    "ACCESS_TOKEN_LIFETIME":    timedelta(hours=1),
+    "REFRESH_TOKEN_LIFETIME":   timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS":    True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    # Tipo de header esperado: Authorization: Bearer <token>
+    "AUTH_HEADER_TYPES":        ("Bearer",),
+    # Campo del modelo de usuario usado como identificador en el token
+    "USER_ID_FIELD":            "id",
+    "USER_ID_CLAIM":            "user_id",
+    # Algoritmo de firma
+    "ALGORITHM":                "HS256",
 }
 
 MIDDLEWARE = [
@@ -140,12 +183,15 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST"),
-        "PORT": os.getenv("DB_PORT"),
+        "ENGINE":       "django.db.backends.postgresql",
+        "NAME":         os.getenv("DB_NAME"),
+        "USER":         os.getenv("DB_USER"),
+        "PASSWORD":     os.getenv("DB_PASSWORD"),
+        "HOST":         os.getenv("DB_HOST"),
+        "PORT":         os.getenv("DB_PORT"),
+        # Reutilizar conexiones hasta 60 s en lugar de abrir
+        # una nueva por cada request.
+        "CONN_MAX_AGE": 60,
     }
 }
 
@@ -187,4 +233,32 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
+
+
+# ==============================================================
+# SEGURIDAD HTTP
+# ==============================================================
+
+# Evita que el navegador adivine el Content-Type.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Activa el filtro XSS del navegador (IE/Edge legacy).
+SECURE_BROWSER_XSS_FILTER = True
+
+# Impide que la app se cargue dentro de un <iframe>
+# (protección contra clickjacking).
+X_FRAME_OPTIONS = "DENY"
+
+# En producción (DEBUG=False) forzar HTTPS.
+if not DEBUG:
+    SECURE_SSL_REDIRECT                  = True
+    SECURE_HSTS_SECONDS                  = 31536000  # 1 año
+    SECURE_HSTS_INCLUDE_SUBDOMAINS       = True
+    SECURE_HSTS_PRELOAD                  = True
+    SESSION_COOKIE_SECURE                = True
+    CSRF_COOKIE_SECURE                   = True
+    SECURE_PROXY_SSL_HEADER              = (
+        "HTTP_X_FORWARDED_PROTO",
+        "https"
+    )
 

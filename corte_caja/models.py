@@ -72,7 +72,6 @@ class MovimientoCaja(models.Model):
 
     TIPOS = [
         ("REEMBOLSO", "Reembolso"),
-        ("AJUSTE", "Ajuste"),
     ]
 
     id = models.UUIDField(

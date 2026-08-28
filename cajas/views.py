@@ -1,6 +1,10 @@
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db import IntegrityError
+
+from usuarios.permissions import IsAdmin
 
 from .models import Caja
 from .serializers import CajaSerializer
@@ -17,7 +21,18 @@ class CajaViewSet(
 
     serializer_class = CajaSerializer
 
-    permission_classes = []
+
+    def get_permissions(self):
+
+        if self.action == "create":
+
+            return [
+                IsAdmin()
+            ]
+
+        return [
+            IsAuthenticated()
+        ]
 
 
     def list(self, request):
@@ -72,7 +87,19 @@ class CajaViewSet(
             )
 
 
-        caja = serializer.save()
+        try:
+
+            caja = serializer.save()
+
+        except IntegrityError:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Ya existe una caja con ese nombre."
+                },
+                status=status.HTTP_409_CONFLICT
+            )
 
 
         return Response(
@@ -115,5 +142,4 @@ class CajaViewSet(
                 "data": data
             },
             status=status.HTTP_200_OK
-        ) 
-        
+        )
