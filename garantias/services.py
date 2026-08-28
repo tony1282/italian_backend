@@ -8,6 +8,11 @@ from detalle_venta.models import DetalleVenta
 from variantes.models import Variante
 from inventario.models import MovimientoInventario
 
+from devoluciones.models import (
+    Devolucion,
+    DetalleDevolucion
+)
+
 from bitacora.services import registrar_bitacora
 
 from .models import Garantia
@@ -79,7 +84,7 @@ def crear_garantia(
         )
 
     # ========================================================
-    # 4. Buscar y bloquear el detalle de venta
+    # 4. Buscar y bloquear detalle de venta
     # ========================================================
 
     try:
@@ -105,6 +110,12 @@ def crear_garantia(
 
     cantidad = data["cantidad"]
 
+    if cantidad <= 0:
+
+        raise Exception(
+            "La cantidad debe ser mayor que cero."
+        )
+
     if cantidad > detalle_venta.cantidad:
 
         raise Exception(
@@ -113,7 +124,7 @@ def crear_garantia(
         )
 
     # ========================================================
-    # 6. Validar que tenga garantía configurada
+    # 6. Validar garantía configurada
     # ========================================================
 
     if not variante.garantia_meses:
@@ -123,7 +134,7 @@ def crear_garantia(
         )
 
     # ========================================================
-    # 7. Validar vigencia de la garantía
+    # 7. Validar vigencia
     # ========================================================
 
     fecha_limite = (
@@ -141,13 +152,11 @@ def crear_garantia(
         )
 
     # ========================================================
-    # 8. Calcular cantidad ya utilizada en garantías
+    # 8. CALCULAR UNIDADES DISPONIBLES
     #
-    # PENDIENTE y APROBADA reservan unidades.
-    #
-    # RECHAZADA no cuenta porque no consumió una garantía.
-    #
-    # FINALIZADA sí cuenta porque la garantía ya fue atendida.
+    # cantidad vendida
+    # - devoluciones pendientes/aprobadas
+    # - garantías pendientes/aprobadas/finalizadas
     # ========================================================
 
     cantidad_garantizada = (
@@ -166,22 +175,43 @@ def crear_garantia(
         or 0
     )
 
+    cantidad_devuelta = (
+        DetalleDevolucion.objects
+        .filter(
+            detalle_venta=detalle_venta,
+            devolucion__estado__in=[
+                "PENDIENTE",
+                "APROBADA",
+            ]
+        )
+        .aggregate(
+            total=Sum("cantidad")
+        )["total"]
+        or 0
+    )
+
     cantidad_disponible = (
         detalle_venta.cantidad
         -
         cantidad_garantizada
+        -
+        cantidad_devuelta
     )
+
+    if cantidad_disponible < 0:
+
+        cantidad_disponible = 0
 
     if cantidad > cantidad_disponible:
 
         raise Exception(
             "La cantidad solicitada supera las unidades "
-            f"disponibles para garantía. "
+            "disponibles para garantía. "
             f"Disponibles: {cantidad_disponible}."
         )
 
     # ========================================================
-    # 9. Crear garantía
+    # 9. CREAR GARANTÍA
     # ========================================================
 
     garantia = Garantia.objects.create(
@@ -298,9 +328,7 @@ def aprobar_garantia(
         )
 
         # ----------------------------------------------------
-        # Verificar stock ANTES de cualquier movimiento.
-        # Se necesita al menos `cantidad` unidades para
-        # entregar el reemplazo al cliente.
+        # Verificar stock vendible
         # ----------------------------------------------------
 
         if variante.stock < cantidad:
@@ -312,21 +340,40 @@ def aprobar_garantia(
             )
 
         # ----------------------------------------------------
-        # Producto defectuoso recibido (entrada)
+        # STOCK ORIGINAL
         # ----------------------------------------------------
 
-        stock_antes_entrada = variante.stock
+        stock_anterior = variante.stock
 
-        stock_tras_entrada = (
-            stock_antes_entrada
+        stock_defectuoso_anterior = (
+            variante.stock_defectuoso
+        )
+
+        # ----------------------------------------------------
+        # RECIBIR PRODUCTO DEFECTUOSO
+        #
+        # NO aumenta el stock vendible.
+        # Aumenta stock_defectuoso.
+        # ----------------------------------------------------
+
+        stock_nuevo = stock_anterior
+
+        stock_defectuoso_nuevo = (
+            stock_defectuoso_anterior
             + cantidad
         )
 
-        variante.stock = stock_tras_entrada
+        variante.stock = stock_nuevo
+
+        variante.stock_defectuoso = (
+            stock_defectuoso_nuevo
+        )
 
         variante.save(
             update_fields=[
-                "stock"
+                "stock",
+                "stock_defectuoso",
+                "fecha_actualizacion"
             ]
         )
 
@@ -336,11 +383,19 @@ def aprobar_garantia(
 
             tipo="GARANTIA",
 
-            stock_anterior=stock_antes_entrada,
+            stock_anterior=stock_anterior,
 
             cantidad=cantidad,
 
-            stock_nuevo=stock_tras_entrada,
+            stock_nuevo=stock_nuevo,
+
+            stock_defectuoso_anterior=(
+                stock_defectuoso_anterior
+            ),
+
+            stock_defectuoso_nuevo=(
+                stock_defectuoso_nuevo
+            ),
 
             observaciones=(
                 f"Reemplazo por garantía "
@@ -353,21 +408,28 @@ def aprobar_garantia(
         )
 
         # ----------------------------------------------------
-        # Producto nuevo entregado (salida)
+        # ENTREGAR PRODUCTO NUEVO
+        #
+        # Disminuye solamente stock vendible.
         # ----------------------------------------------------
 
-        stock_antes_salida = variante.stock
+        stock_anterior = variante.stock
 
-        stock_tras_salida = (
-            stock_antes_salida
+        stock_nuevo = (
+            stock_anterior
             - cantidad
         )
 
-        variante.stock = stock_tras_salida
+        stock_defectuoso_actual = (
+            variante.stock_defectuoso
+        )
+
+        variante.stock = stock_nuevo
 
         variante.save(
             update_fields=[
-                "stock"
+                "stock",
+                "fecha_actualizacion"
             ]
         )
 
@@ -377,11 +439,19 @@ def aprobar_garantia(
 
             tipo="GARANTIA",
 
-            stock_anterior=stock_antes_salida,
+            stock_anterior=stock_anterior,
 
             cantidad=cantidad,
 
-            stock_nuevo=stock_tras_salida,
+            stock_nuevo=stock_nuevo,
+
+            stock_defectuoso_anterior=(
+                stock_defectuoso_actual
+            ),
+
+            stock_defectuoso_nuevo=(
+                stock_defectuoso_actual
+            ),
 
             observaciones=(
                 f"Reemplazo por garantía "
@@ -453,7 +523,7 @@ def aprobar_garantia(
             )
 
         # ----------------------------------------------------
-        # Validar stock de la variante nueva
+        # Validar stock de variante nueva
         # ----------------------------------------------------
 
         if variante_nueva.stock < cantidad:
@@ -466,25 +536,41 @@ def aprobar_garantia(
             )
 
         # ----------------------------------------------------
-        # Producto original regresa
+        # PRODUCTO ORIGINAL DEFECTUOSO REGRESA
+        #
+        # NO aumenta stock vendible.
+        # Aumenta stock_defectuoso.
         # ----------------------------------------------------
 
-        stock_anterior_original = (
+        stock_original_anterior = (
             variante_original.stock
         )
 
-        stock_nuevo_original = (
-            stock_anterior_original
+        stock_original_defectuoso_anterior = (
+            variante_original.stock_defectuoso
+        )
+
+        stock_original_nuevo = (
+            stock_original_anterior
+        )
+
+        stock_original_defectuoso_nuevo = (
+            stock_original_defectuoso_anterior
             + cantidad
         )
 
         variante_original.stock = (
-            stock_nuevo_original
+            stock_original_nuevo
+        )
+
+        variante_original.stock_defectuoso = (
+            stock_original_defectuoso_nuevo
         )
 
         variante_original.save(
             update_fields=[
-                "stock"
+                "stock",
+                "stock_defectuoso"
             ]
         )
 
@@ -495,19 +581,27 @@ def aprobar_garantia(
             tipo="CAMBIO_PRODUCTO",
 
             stock_anterior=(
-                stock_anterior_original
+                stock_original_anterior
             ),
 
             cantidad=cantidad,
 
             stock_nuevo=(
-                stock_nuevo_original
+                stock_original_nuevo
+            ),
+
+            stock_defectuoso_anterior=(
+                stock_original_defectuoso_anterior
+            ),
+
+            stock_defectuoso_nuevo=(
+                stock_original_defectuoso_nuevo
             ),
 
             observaciones=(
                 f"Cambio de producto por garantía "
                 f"{garantia.id} - "
-                "entrada producto original"
+                "entrada producto original defectuoso"
             ),
 
             usuario=usuario
@@ -515,20 +609,24 @@ def aprobar_garantia(
         )
 
         # ----------------------------------------------------
-        # Producto nuevo sale
+        # PRODUCTO NUEVO SALE
         # ----------------------------------------------------
 
-        stock_anterior_nueva = (
+        stock_nueva_anterior = (
             variante_nueva.stock
         )
 
-        stock_nuevo_nueva = (
-            stock_anterior_nueva
+        stock_nueva_nuevo = (
+            stock_nueva_anterior
             - cantidad
         )
 
+        stock_nueva_defectuoso = (
+            variante_nueva.stock_defectuoso
+        )
+
         variante_nueva.stock = (
-            stock_nuevo_nueva
+            stock_nueva_nuevo
         )
 
         variante_nueva.save(
@@ -544,13 +642,21 @@ def aprobar_garantia(
             tipo="CAMBIO_PRODUCTO",
 
             stock_anterior=(
-                stock_anterior_nueva
+                stock_nueva_anterior
             ),
 
             cantidad=cantidad,
 
             stock_nuevo=(
-                stock_nuevo_nueva
+                stock_nueva_nuevo
+            ),
+
+            stock_defectuoso_anterior=(
+                stock_nueva_defectuoso
+            ),
+
+            stock_defectuoso_nuevo=(
+                stock_nueva_defectuoso
             ),
 
             observaciones=(
@@ -573,11 +679,11 @@ def aprobar_garantia(
 
     elif resolucion == "REPARACION":
 
-        # La reparación no modifica el stock.
+        # La reparación no modifica stock.
         pass
 
     # ========================================================
-    # 6. Actualizar garantía
+    # 6. ACTUALIZAR GARANTÍA
     # ========================================================
 
     garantia.estado = "APROBADA"

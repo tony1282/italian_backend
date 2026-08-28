@@ -40,6 +40,16 @@ class VentaViewSet(
 
     serializer_class = VentaSerializer
 
+    # ==========================================================
+    # MÉTODOS HTTP PERMITIDOS
+    # ==========================================================
+
+    http_method_names = [
+        "get",
+        "post",
+        "head",
+        "options",
+    ]
 
     # ==========================================================
     # PERMISOS
@@ -50,7 +60,6 @@ class VentaViewSet(
         return [
             IsAuthenticated()
         ]
-
 
     # ==========================================================
     # CREAR VENTA
@@ -78,7 +87,6 @@ class VentaViewSet(
                 status=status.HTTP_403_FORBIDDEN
             )
 
-
         # ------------------------------------------------------
         # DATOS
         # ------------------------------------------------------
@@ -96,7 +104,6 @@ class VentaViewSet(
             []
         )
 
-
         # ======================================================
         # VALIDAR CAJA_ID
         # ======================================================
@@ -112,7 +119,6 @@ class VentaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         # ======================================================
         # VALIDAR METODO_PAGO_ID
         # ======================================================
@@ -127,7 +133,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-
 
         # ======================================================
         # DESCUENTO
@@ -162,7 +167,6 @@ class VentaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         if not descuento.is_finite():
 
             return Response(
@@ -174,11 +178,9 @@ class VentaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         descuento = descuento.quantize(
             Decimal("0.01")
         )
-
 
         if descuento < 0:
 
@@ -192,7 +194,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-
 
         # ======================================================
         # PRODUCTOS
@@ -213,7 +214,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-
 
         # ======================================================
         # CAJA
@@ -240,7 +240,6 @@ class VentaViewSet(
                 status=status.HTTP_404_NOT_FOUND
             )
 
-
         # ======================================================
         # VALIDAR CAJA ACTIVA
         # ======================================================
@@ -256,7 +255,6 @@ class VentaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         # ======================================================
         # VALIDAR CAJA ABIERTA
         # ======================================================
@@ -271,7 +269,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-
 
         # ======================================================
         # CORTE ABIERTO
@@ -303,7 +300,6 @@ class VentaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         # ======================================================
         # MÉTODO DE PAGO
         # ======================================================
@@ -333,7 +329,6 @@ class VentaViewSet(
                 status=status.HTTP_404_NOT_FOUND
             )
 
-
         # ======================================================
         # EMPRESA
         # ======================================================
@@ -353,13 +348,11 @@ class VentaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         iva_porcentaje = Decimal(
             str(
                 empresa.iva
             )
         )
-
 
         if not iva_porcentaje.is_finite():
 
@@ -371,7 +364,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_400_BAD_REQUEST
             )
-
 
         # ======================================================
         # TRANSACCIÓN
@@ -387,7 +379,6 @@ class VentaViewSet(
                 "0.00"
             )
 
-
             # ==================================================
             # FOLIO
             # ==================================================
@@ -399,7 +390,6 @@ class VentaViewSet(
                     Max("folio")
                 )
             )["folio__max"]
-
 
             if ultima:
 
@@ -430,9 +420,7 @@ class VentaViewSet(
 
                 numero = 1
 
-
             folio = f"V-{numero:07d}"
-
 
             # ==================================================
             # CREAR VENTA
@@ -457,7 +445,6 @@ class VentaViewSet(
                 total=Decimal("0.00"),
 
             )
-
 
             # ==================================================
             # PRODUCTOS
@@ -490,7 +477,6 @@ class VentaViewSet(
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-
                 # --------------------------------------------------
                 # VARIANTE ID
                 # --------------------------------------------------
@@ -498,7 +484,6 @@ class VentaViewSet(
                 variante_id = item.get(
                     "variante_id"
                 )
-
 
                 if not variante_id:
 
@@ -517,7 +502,6 @@ class VentaViewSet(
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
 
                 # --------------------------------------------------
                 # CANTIDAD
@@ -552,7 +536,6 @@ class VentaViewSet(
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-
                 if cantidad <= 0:
 
                     transaction.set_rollback(
@@ -570,7 +553,6 @@ class VentaViewSet(
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
 
                 # ==================================================
                 # VARIANTE CON BLOQUEO
@@ -610,7 +592,6 @@ class VentaViewSet(
                         status=status.HTTP_404_NOT_FOUND
                     )
 
-
                 # ==================================================
                 # VARIANTE ACTIVA
                 # ==================================================
@@ -631,7 +612,6 @@ class VentaViewSet(
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
-
 
                 # ==================================================
                 # PRODUCTO ACTIVO
@@ -654,7 +634,6 @@ class VentaViewSet(
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-
                 # ==================================================
                 # PRECIO
                 # ==================================================
@@ -664,7 +643,6 @@ class VentaViewSet(
                         variante.precio_menudeo
                     )
                 )
-
 
                 if not precio_unitario.is_finite():
 
@@ -684,7 +662,6 @@ class VentaViewSet(
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-
                 if precio_unitario < 0:
 
                     transaction.set_rollback(
@@ -703,18 +680,19 @@ class VentaViewSet(
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-
                 precio_unitario = precio_unitario.quantize(
                     Decimal("0.01")
                 )
-
 
                 # ==================================================
                 # STOCK
                 # ==================================================
 
                 stock_anterior = variante.stock
-
+                
+                stock_defectuoso_anterior = (
+                    variante.stock_defectuoso
+                )
 
                 if stock_anterior < cantidad:
 
@@ -743,7 +721,6 @@ class VentaViewSet(
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-
                 # ==================================================
                 # NUEVO STOCK
                 # ==================================================
@@ -752,7 +729,6 @@ class VentaViewSet(
                     stock_anterior -
                     cantidad
                 )
-
 
                 # ==================================================
                 # SUBTOTAL LÍNEA
@@ -765,9 +741,7 @@ class VentaViewSet(
                     Decimal("0.01")
                 )
 
-
                 subtotal += subtotal_linea
-
 
                 # ==================================================
                 # DETALLE VENTA
@@ -789,7 +763,6 @@ class VentaViewSet(
 
                 )
 
-
                 # ==================================================
                 # MOVIMIENTO INVENTARIO
                 # ==================================================
@@ -805,6 +778,10 @@ class VentaViewSet(
                     cantidad=cantidad,
 
                     stock_nuevo=stock_nuevo,
+                    
+                    stock_defectuoso_nuevo=(
+                        stock_defectuoso_anterior
+                    ),
 
                     observaciones=(
                         f"Venta {folio}"
@@ -813,7 +790,6 @@ class VentaViewSet(
                     usuario=request.user
 
                 )
-
 
                 # ==================================================
                 # ACTUALIZAR STOCK
@@ -827,7 +803,6 @@ class VentaViewSet(
                         "fecha_actualizacion"
                     ]
                 )
-
 
             # ==================================================
             # VALIDAR SUBTOTAL
@@ -851,7 +826,6 @@ class VentaViewSet(
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-
             # ==================================================
             # VALIDAR DESCUENTO
             # ==================================================
@@ -874,7 +848,6 @@ class VentaViewSet(
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-
             # ==================================================
             # SUBTOTAL FINAL
             # ==================================================
@@ -885,7 +858,6 @@ class VentaViewSet(
             ).quantize(
                 Decimal("0.01")
             )
-
 
             # ==================================================
             # IVA
@@ -901,7 +873,6 @@ class VentaViewSet(
                 Decimal("0.01")
             )
 
-
             # ==================================================
             # TOTAL
             # ==================================================
@@ -912,7 +883,6 @@ class VentaViewSet(
             ).quantize(
                 Decimal("0.01")
             )
-
 
             # ==================================================
             # ACTUALIZAR VENTA
@@ -934,7 +904,6 @@ class VentaViewSet(
                     "total"
                 ]
             )
-
 
             # ==================================================
             # BITÁCORA
@@ -958,7 +927,6 @@ class VentaViewSet(
 
             )
 
-
             # ==================================================
             # RESPUESTA
             # ==================================================
@@ -974,7 +942,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_201_CREATED
             )
-
 
     # ==========================================================
     # LISTAR VENTAS
@@ -999,7 +966,6 @@ class VentaViewSet(
         )
 
         data = []
-
 
         for venta in ventas:
 
@@ -1027,7 +993,6 @@ class VentaViewSet(
                 }
             )
 
-
         return Response(
             {
                 "success": True,
@@ -1035,7 +1000,6 @@ class VentaViewSet(
             },
             status=status.HTTP_200_OK
         )
-
 
     # ==========================================================
     # CONSULTAR VENTA
@@ -1082,9 +1046,7 @@ class VentaViewSet(
                 status=status.HTTP_404_NOT_FOUND
             )
 
-
         productos = []
-
 
         for detalle in venta.detalles.all():
 
@@ -1124,7 +1086,6 @@ class VentaViewSet(
                     )
                 }
             )
-
 
         return Response(
             {
@@ -1169,7 +1130,6 @@ class VentaViewSet(
             status=status.HTTP_200_OK
         )
 
-
     # ==========================================================
     # CANCELAR VENTA
     # SOLO ADMINISTRADOR
@@ -1201,7 +1161,6 @@ class VentaViewSet(
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
-
 
         # ======================================================
         # TRANSACCIÓN
@@ -1240,7 +1199,6 @@ class VentaViewSet(
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-
             # --------------------------------------------------
             # EMPLEADO SOLO PUEDE CANCELAR SUS PROPIAS VENTAS
             # --------------------------------------------------
@@ -1262,7 +1220,6 @@ class VentaViewSet(
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-
             # --------------------------------------------------
             # VALIDAR ESTADO
             # --------------------------------------------------
@@ -1279,7 +1236,6 @@ class VentaViewSet(
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
 
             # --------------------------------------------------
             # NO CANCELAR DEVUELTA
@@ -1299,7 +1255,6 @@ class VentaViewSet(
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-
             # ==================================================
             # VALIDAR DEVOLUCIONES EXISTENTES
             # ==================================================
@@ -1316,7 +1271,6 @@ class VentaViewSet(
                 .exists()
             )
 
-
             if devoluciones_activas:
 
                 return Response(
@@ -1332,7 +1286,6 @@ class VentaViewSet(
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-
             # ==================================================
             # OBTENER DETALLES
             # ==================================================
@@ -1344,7 +1297,6 @@ class VentaViewSet(
                 )
                 .all()
             )
-
 
             # ==================================================
             # RESTAURAR STOCK
@@ -1364,7 +1316,6 @@ class VentaViewSet(
                     )
                 )
 
-
                 # ----------------------------------------------
                 # STOCK ANTERIOR
                 # ----------------------------------------------
@@ -1372,7 +1323,6 @@ class VentaViewSet(
                 stock_anterior = (
                     variante.stock
                 )
-
 
                 # ----------------------------------------------
                 # STOCK NUEVO
@@ -1382,7 +1332,10 @@ class VentaViewSet(
                     stock_anterior +
                     detalle.cantidad
                 )
-
+                
+                stock_defectuoso_anterior = (
+                    variante.stock_defectuoso
+                )
 
                 # ----------------------------------------------
                 # MOVIMIENTO INVENTARIO
@@ -1399,6 +1352,17 @@ class VentaViewSet(
                     cantidad=detalle.cantidad,
 
                     stock_nuevo=stock_nuevo,
+                    
+                    stock_defectuoso_anterior=(
+                    
+                    stock_defectuoso_anterior),
+
+                    stock_defectuoso_nuevo=(
+                    
+                    stock_defectuoso_anterior
+                    
+                    ),
+
 
                     observaciones=(
                         f"Cancelación {venta.folio}"
@@ -1407,7 +1371,6 @@ class VentaViewSet(
                     usuario=request.user
 
                 )
-
 
                 # ----------------------------------------------
                 # ACTUALIZAR STOCK
@@ -1422,7 +1385,6 @@ class VentaViewSet(
                     ]
                 )
 
-
             # ==================================================
             # CAMBIAR ESTADO
             # ==================================================
@@ -1434,7 +1396,6 @@ class VentaViewSet(
                     "estado"
                 ]
             )
-
 
             # ==================================================
             # BITÁCORA
@@ -1458,7 +1419,6 @@ class VentaViewSet(
                 )
 
             )
-
 
         # ======================================================
         # RESPUESTA

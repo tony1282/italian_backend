@@ -32,7 +32,19 @@ class Variante(models.Model):
         max_length=150
     )
 
+    # ==========================================================
+    # STOCK VENDIBLE
+    # ==========================================================
+
     stock = models.PositiveIntegerField(
+        default=0
+    )
+
+    # ==========================================================
+    # STOCK DE PRODUCTOS DEFECTUOSOS
+    # ==========================================================
+
+    stock_defectuoso = models.PositiveIntegerField(
         default=0
     )
 
@@ -76,6 +88,8 @@ class Variante(models.Model):
     )
 
     def __str__(self):
-        return f"{self.producto.nombre} - {self.nombre}"
-    
-    
+
+        return (
+            f"{self.producto.nombre} - "
+            f"{self.nombre}"
+        )

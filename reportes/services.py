@@ -36,6 +36,7 @@ def dinero(valor):
     """
     Convierte un valor monetario a Decimal con 2 decimales.
     """
+
     return (
         valor or Decimal("0.00")
     ).quantize(
@@ -57,14 +58,6 @@ def reporte_resumen_dia(
 
     # --------------------------------------------------------
     # VENTAS DEL DÍA
-    #
-    # Solo las ventas que permanecen COMPLETADAS.
-    #
-    # Una devolución parcial no cambia la venta a DEVUELTA,
-    # por lo que sigue contabilizándose.
-    #
-    # Una devolución total cambia la venta a DEVUELTA y deja
-    # de contabilizarse como venta activa.
     # --------------------------------------------------------
 
     ventas = (
@@ -102,10 +95,6 @@ def reporte_resumen_dia(
 
     # --------------------------------------------------------
     # TOTAL VENDIDO
-    #
-    # Venta.total YA contiene:
-    #
-    # subtotal después del descuento + IVA
     # --------------------------------------------------------
 
     total_vendido = dinero(
@@ -148,9 +137,6 @@ def reporte_resumen_dia(
 
     # --------------------------------------------------------
     # REEMBOLSOS DEL DÍA
-    #
-    # Se contabilizan por fecha del movimiento de caja,
-    # independientemente de cuándo se realizó la venta.
     # --------------------------------------------------------
 
     reembolsos_qs = (
@@ -200,21 +186,18 @@ def reporte_resumen_dia(
 
     # --------------------------------------------------------
     # VENTA NETA
-    #
-    # Definición:
-    #
-    # dinero de ventas COMPLETADAS registradas ese día
-    # menos reembolsos registrados ese mismo día.
     # --------------------------------------------------------
 
     venta_neta = dinero(
         total_vendido
-        - reembolsos
+        -
+        reembolsos
     )
 
     return {
 
-        "fecha": fecha,
+        "fecha":
+            fecha,
 
         "cantidad_ventas":
             cantidad_ventas,
@@ -314,11 +297,14 @@ def reporte_ventas(
 
         data.append(
             {
-                "id": venta.id,
+                "id":
+                    venta.id,
 
-                "folio": venta.folio,
+                "folio":
+                    venta.folio,
 
-                "fecha": venta.fecha,
+                "fecha":
+                    venta.fecha,
 
                 "usuario": (
                     f"{venta.usuario.nombre} "
@@ -345,7 +331,8 @@ def reporte_ventas(
                     venta.total
                 ),
 
-                "estado": venta.estado
+                "estado":
+                    venta.estado
             }
         )
 
@@ -363,13 +350,6 @@ def reporte_productos(
 
     # --------------------------------------------------------
     # SOLO VENTAS QUE SIGUEN ACTIVAS
-    #
-    # CANCELADA -> excluida
-    # DEVUELTA  -> excluida
-    # COMPLETADA -> incluida
-    #
-    # Las devoluciones parciales se descuentan desde
-    # DetalleDevolucion.
     # --------------------------------------------------------
 
     devoluciones_aprobadas = (
@@ -381,15 +361,6 @@ def reporte_productos(
             "detalles"
         )
     )
-
-    detalles_venta_qs = (
-        Venta.objects
-        .none()
-    )
-
-    # --------------------------------------------------------
-    # PREFETCH EFICIENTE
-    # --------------------------------------------------------
 
     ventas = (
         Venta.objects
@@ -449,18 +420,6 @@ def reporte_productos(
         if not detalles:
             continue
 
-        # ----------------------------------------------------
-        # SUBTOTAL ORIGINAL DE LOS DETALLES
-        #
-        # IMPORTANTE:
-        #
-        # Venta.subtotal ya es:
-        #
-        # subtotal_original - descuento
-        #
-        # Por eso NO debemos volver a restar Venta.descuento.
-        # ----------------------------------------------------
-
         subtotal_original_venta = sum(
             (
                 detalle.subtotal
@@ -489,10 +448,6 @@ def reporte_productos(
             or Decimal("0.00")
         )
 
-        # ----------------------------------------------------
-        # SI HAY DATOS INCONSISTENTES, EVITAR DIVISIÓN
-        # ----------------------------------------------------
-
         if subtotal_original_venta <= Decimal("0.00"):
 
             continue
@@ -520,11 +475,12 @@ def reporte_productos(
                         detalle_id,
                         0
                     )
-                    + detalle_devolucion.cantidad
+                    +
+                    detalle_devolucion.cantidad
                 )
 
         # ----------------------------------------------------
-        # PROCESAR CADA DETALLE
+        # PROCESAR DETALLES
         # ----------------------------------------------------
 
         for detalle in detalles:
@@ -540,61 +496,39 @@ def reporte_productos(
                 )
             )
 
-            # ------------------------------------------------
-            # EVITAR DATOS INVÁLIDOS
-            # ------------------------------------------------
-
             if cantidad_original <= 0:
                 continue
 
-            # ------------------------------------------------
-            # CANTIDAD REAL VENDIDA
-            # ------------------------------------------------
-
             cantidad_vendida = (
                 cantidad_original
-                - cantidad_devuelta
+                -
+                cantidad_devuelta
             )
 
             if cantidad_vendida <= 0:
                 continue
-
-            # ------------------------------------------------
-            # SUBTOTAL DEL DETALLE
-            # ------------------------------------------------
 
             subtotal_detalle = (
                 detalle.subtotal
                 or Decimal("0.00")
             )
 
-            # ------------------------------------------------
-            # PARTICIPACIÓN DEL PRODUCTO EN LA VENTA
-            #
-            # Se utiliza para repartir el descuento global.
-            # ------------------------------------------------
-
             proporcion = (
                 subtotal_detalle
-                / subtotal_original_venta
+                /
+                subtotal_original_venta
             )
-
-            # ------------------------------------------------
-            # DESCUENTO PROPORCIONAL
-            # ------------------------------------------------
 
             descuento_detalle = (
                 descuento_venta
-                * proporcion
+                *
+                proporcion
             )
-
-            # ------------------------------------------------
-            # BASE NETA DEL PRODUCTO
-            # ------------------------------------------------
 
             base_neta_detalle = (
                 subtotal_detalle
-                - descuento_detalle
+                -
+                descuento_detalle
             )
 
             if base_neta_detalle < Decimal("0.00"):
@@ -603,23 +537,18 @@ def reporte_productos(
                     "0.00"
                 )
 
-            # ------------------------------------------------
-            # IVA PROPORCIONAL
-            #
-            # El IVA de la venta se distribuye según la
-            # participación del importe neto del detalle.
-            # ------------------------------------------------
-
             if subtotal_neto_venta > Decimal("0.00"):
 
                 proporcion_neta = (
                     base_neta_detalle
-                    / subtotal_neto_venta
+                    /
+                    subtotal_neto_venta
                 )
 
                 iva_detalle = (
                     iva_venta
-                    * proporcion_neta
+                    *
+                    proporcion_neta
                 )
 
             else:
@@ -628,34 +557,23 @@ def reporte_productos(
                     "0.00"
                 )
 
-            # ------------------------------------------------
-            # TOTAL DEL DETALLE CON IVA
-            # ------------------------------------------------
-
             total_detalle = (
                 base_neta_detalle
-                + iva_detalle
+                +
+                iva_detalle
             )
-
-            # ------------------------------------------------
-            # SI EXISTE DEVOLUCIÓN PARCIAL
-            #
-            # Solo queda como vendido el porcentaje restante.
-            # ------------------------------------------------
 
             factor_vendido = (
                 Decimal(cantidad_vendida)
-                / Decimal(cantidad_original)
+                /
+                Decimal(cantidad_original)
             )
 
             total_detalle = (
                 total_detalle
-                * factor_vendido
+                *
+                factor_vendido
             )
-
-            # ------------------------------------------------
-            # AGRUPAR POR VARIANTE
-            # ------------------------------------------------
 
             variante_id = (
                 detalle.variante_id
@@ -678,28 +596,18 @@ def reporte_productos(
                         .nombre
                     ),
 
-                    "cantidad_vendida": 0,
+                    "cantidad_vendida":
+                        0,
 
                     "total_generado":
                         Decimal("0.00")
                 }
-
-            # ------------------------------------------------
-            # ACUMULAR CANTIDADES
-            # ------------------------------------------------
 
             productos[
                 variante_id
             ]["cantidad_vendida"] += (
                 cantidad_vendida
             )
-
-            # ------------------------------------------------
-            # ACUMULAR TOTAL
-            #
-            # Redondeamos al final, no en cada operación,
-            # para reducir diferencias acumuladas de centavos.
-            # ------------------------------------------------
 
             productos[
                 variante_id
@@ -766,7 +674,8 @@ def reporte_inventario():
 
         data.append(
             {
-                "id": variante.id,
+                "id":
+                    variante.id,
 
                 "producto":
                     variante.producto.nombre,
@@ -782,6 +691,9 @@ def reporte_inventario():
 
                 "stock_actual":
                     variante.stock,
+
+                "stock_defectuoso":
+                    variante.stock_defectuoso,
 
                 "stock_minimo":
                     variante.stock_minimo,
@@ -834,7 +746,8 @@ def reporte_stock_bajo():
 
         data.append(
             {
-                "id": variante.id,
+                "id":
+                    variante.id,
 
                 "producto":
                     variante.producto.nombre,
@@ -844,6 +757,9 @@ def reporte_stock_bajo():
 
                 "stock_actual":
                     variante.stock,
+
+                "stock_defectuoso":
+                    variante.stock_defectuoso,
 
                 "stock_minimo":
                     variante.stock_minimo,
@@ -895,7 +811,8 @@ def reporte_cortes(
 
         data.append(
             {
-                "id": corte.id,
+                "id":
+                    corte.id,
 
                 "caja":
                     str(corte.caja),
@@ -1229,6 +1146,12 @@ def reporte_movimientos(
 
                 "stock_nuevo":
                     movimiento.stock_nuevo,
+
+                "stock_defectuoso_anterior":
+                    movimiento.stock_defectuoso_anterior,
+
+                "stock_defectuoso_nuevo":
+                    movimiento.stock_defectuoso_nuevo,
 
                 "observaciones":
                     movimiento.observaciones,

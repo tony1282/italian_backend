@@ -34,13 +34,31 @@ class MovimientoInventario(models.Model):
         choices=TIPOS
     )
 
+    # ==========================================================
+    # STOCK VENDIBLE
+    # ==========================================================
+
     stock_anterior = models.PositiveIntegerField(
         default=0
     )
 
-    cantidad = models.PositiveIntegerField()
+    cantidad = models.PositiveIntegerField(
+        default=0
+    )
 
     stock_nuevo = models.PositiveIntegerField(
+        default=0
+    )
+
+    # ==========================================================
+    # STOCK DEFECTUOSO
+    # ==========================================================
+
+    stock_defectuoso_anterior = models.PositiveIntegerField(
+        default=0
+    )
+
+    stock_defectuoso_nuevo = models.PositiveIntegerField(
         default=0
     )
 

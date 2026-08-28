@@ -17,8 +17,11 @@ class VarianteSerializer(
             "codigo_barras",
             "sku",
             "nombre",
+
             "stock",
+            "stock_defectuoso",
             "stock_minimo",
+
             "costo",
             "precio_menudeo",
             "precio_mayoreo",
@@ -31,6 +34,7 @@ class VarianteSerializer(
         read_only_fields = [
             "id",
             "stock",
+            "stock_defectuoso",
             "fecha_creacion",
             "fecha_actualizacion",
         ]

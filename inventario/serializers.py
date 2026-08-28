@@ -25,9 +25,14 @@ class MovimientoInventarioSerializer(
             "id",
             "variante",
             "tipo",
+
             "stock_anterior",
             "cantidad",
             "stock_nuevo",
+
+            "stock_defectuoso_anterior",
+            "stock_defectuoso_nuevo",
+
             "observaciones",
             "usuario",
             "fecha",
@@ -37,6 +42,8 @@ class MovimientoInventarioSerializer(
             "id",
             "stock_anterior",
             "stock_nuevo",
+            "stock_defectuoso_anterior",
+            "stock_defectuoso_nuevo",
             "usuario",
             "fecha",
         ]

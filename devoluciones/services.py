@@ -12,6 +12,8 @@ from metodos_pago.models import MetodoPago
 
 from corte_caja.models import MovimientoCaja, CorteCaja
 
+from garantias.models import Garantia
+
 from .models import (
     Devolucion,
     DetalleDevolucion
@@ -147,7 +149,46 @@ def crear_devolucion(
     )
 
     # ==========================================================
-    # 6. CREAR DETALLES
+    # 6. OBTENER SUBTOTAL BRUTO DE LA VENTA
+    # ==========================================================
+
+    subtotal_bruto_venta = (
+        DetalleVenta.objects
+        .filter(
+            venta=venta
+        )
+        .aggregate(
+            total=models.Sum("subtotal")
+        )["total"]
+        or Decimal("0.00")
+    )
+
+    subtotal_bruto_venta = (
+        subtotal_bruto_venta
+        .quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
+        )
+    )
+
+    if subtotal_bruto_venta <= 0:
+
+        raise Exception(
+            "La venta no tiene un subtotal válido."
+        )
+
+    # ==========================================================
+    # 7. CALCULAR FACTOR REAL DE LA VENTA
+    # ==========================================================
+
+    factor_reembolso = (
+        venta.subtotal
+        /
+        subtotal_bruto_venta
+    )
+
+    # ==========================================================
+    # 8. CREAR DETALLES
     # ==========================================================
 
     total = Decimal("0.00")
@@ -187,7 +228,7 @@ def crear_devolucion(
             )
 
         # ------------------------------------------------------
-        # CANTIDAD YA DEVUELTA
+        # CANTIDAD YA COMPROMETIDA EN DEVOLUCIONES
         # ------------------------------------------------------
 
         cantidad_devuelta = (
@@ -205,26 +246,84 @@ def crear_devolucion(
             or 0
         )
 
+        # ------------------------------------------------------
+        # CANTIDAD YA COMPROMETIDA EN GARANTÍAS
+        # ------------------------------------------------------
+
+        cantidad_garantizada = (
+            Garantia.objects
+            .filter(
+                detalle_venta=detalle_venta,
+                estado__in=[
+                    "PENDIENTE",
+                    "APROBADA",
+                    "FINALIZADA",
+                ]
+            )
+            .aggregate(
+                total=models.Sum("cantidad")
+            )["total"]
+            or 0
+        )
+
+        # ------------------------------------------------------
+        # CUPÓN ÚNICO DE UNIDADES
+        # ------------------------------------------------------
+
         disponible = (
             detalle_venta.cantidad
             -
             cantidad_devuelta
+            -
+            cantidad_garantizada
         )
+
+        if disponible < 0:
+
+            disponible = 0
 
         if cantidad > disponible:
 
             raise Exception(
-                "La cantidad devuelta supera la cantidad disponible."
+                "La cantidad solicitada para devolución "
+                "supera las unidades disponibles. "
+                f"Disponibles: {disponible}."
             )
 
         # ------------------------------------------------------
-        # SUBTOTAL
+        # IMPORTE BRUTO DE LA LÍNEA
+        # ------------------------------------------------------
+
+        subtotal_bruto = (
+            cantidad
+            *
+            detalle_venta.precio_unitario
+        )
+
+        subtotal_bruto = (
+            subtotal_bruto
+            .quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
+        )
+
+        # ------------------------------------------------------
+        # IMPORTE NETO REEMBOLSABLE
         # ------------------------------------------------------
 
         subtotal = (
-            cantidad *
-            detalle_venta.precio_unitario
+            subtotal_bruto
+            *
+            factor_reembolso
+        ).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
         )
+
+        # ------------------------------------------------------
+        # CREAR DETALLE
+        # ------------------------------------------------------
 
         DetalleDevolucion.objects.create(
 
@@ -245,19 +344,42 @@ def crear_devolucion(
         total += subtotal
 
     # ==========================================================
-    # 7. CALCULAR IVA PROPORCIONAL
+    # 9. VALIDAR TOTAL NETO
+    # ==========================================================
+
+    total = (
+        total
+        .quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP
+        )
+    )
+
+    if total <= 0:
+
+        raise Exception(
+            "El importe de la devolución "
+            "debe ser mayor que cero."
+        )
+
+    # ==========================================================
+    # 10. CALCULAR IVA PROPORCIONAL
     # ==========================================================
 
     if venta.subtotal > 0:
 
         iva_devolucion = (
-            total *
+            total
+            *
             venta.iva
         ) / venta.subtotal
 
-        iva_devolucion = iva_devolucion.quantize(
-            Decimal("0.01"),
-            rounding=ROUND_HALF_UP
+        iva_devolucion = (
+            iva_devolucion
+            .quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP
+            )
         )
 
     else:
@@ -265,16 +387,28 @@ def crear_devolucion(
         iva_devolucion = Decimal("0.00")
 
     # ==========================================================
-    # 8. TOTAL FINAL
+    # 11. TOTAL FINAL
     # ==========================================================
 
     total_devuelto = (
-        total +
+        total
+        +
         iva_devolucion
+    ).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP
     )
 
     # ==========================================================
-    # 9. GUARDAR TOTAL
+    # 12. NO PERMITIR REEMBOLSAR MÁS DE LO COBRADO
+    # ==========================================================
+
+    if total_devuelto > venta.total:
+
+        total_devuelto = venta.total
+
+    # ==========================================================
+    # 13. GUARDAR TOTAL
     # ==========================================================
 
     devolucion.total_devuelto = (
@@ -456,7 +590,7 @@ def aprobar_devolucion(
         )
 
         # ------------------------------------------------------
-        # También considerar otras devoluciones pendientes
+        # Otras devoluciones pendientes
         # ------------------------------------------------------
 
         cantidad_pendiente = (
@@ -474,13 +608,39 @@ def aprobar_devolucion(
             or 0
         )
 
+        # ------------------------------------------------------
+        # Garantías comprometidas
+        # ------------------------------------------------------
+
+        cantidad_garantizada = (
+            Garantia.objects
+            .filter(
+                detalle_venta=detalle_venta,
+                estado__in=[
+                    "PENDIENTE",
+                    "APROBADA",
+                    "FINALIZADA",
+                ]
+            )
+            .aggregate(
+                total=models.Sum("cantidad")
+            )["total"]
+            or 0
+        )
+
         disponible = (
             detalle_venta.cantidad
             -
             cantidad_aprobada
             -
             cantidad_pendiente
+            -
+            cantidad_garantizada
         )
+
+        if disponible < 0:
+
+            disponible = 0
 
         if detalle.cantidad > disponible:
 
@@ -491,7 +651,7 @@ def aprobar_devolucion(
 
     # ==========================================================
     # 8. BUSCAR CORTE ABIERTO DE LA MISMA CAJA
-    #    SOLO PARA REEMBOLSO EN EFECTIVO
+    #     SOLO PARA REEMBOLSO EN EFECTIVO
     # ==========================================================
 
     corte = None
@@ -556,9 +716,19 @@ def aprobar_devolucion(
         # ------------------------------------------------------
 
         stock_nuevo = (
-            stock_anterior +
+            stock_anterior
+            +
             detalle.cantidad
         )
+        
+        stock_defectuoso_anterior = (
+            variante.stock_defectuoso
+        )
+
+        stock_defectuoso_nuevo = (
+            stock_defectuoso_anterior
+        )
+
 
         # ------------------------------------------------------
         # REGISTRAR MOVIMIENTO
@@ -575,6 +745,17 @@ def aprobar_devolucion(
             cantidad=detalle.cantidad,
 
             stock_nuevo=stock_nuevo,
+            
+            stock_defectuoso_anterior=(
+            
+            stock_defectuoso_anterior
+            
+            ),
+
+            stock_defectuoso_nuevo=(
+                stock_defectuoso_nuevo
+            ),
+    
 
             observaciones=(
                 f"Devolución {devolucion.id}"
