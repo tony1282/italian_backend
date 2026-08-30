@@ -13,5 +13,5 @@ class EsAdministrador(BasePermission):
         return bool(
             request.user
             and request.user.is_authenticated
-            and getattr(request.user, "rol", None) == ROL_ADMINISTRADOR
+            and getattr(request.user, "rol", None) in (0, 1)
         )

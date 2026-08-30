@@ -41,8 +41,8 @@ class UsuarioManager(BaseUserManager):
             email=email,
             rol=rol,
             activo=activo,
-            is_staff=(rol == 1),
-            is_superuser=(rol == 1),
+            is_staff=(rol in (0, 1)),
+            is_superuser=(rol == 0),
         )
 
         user.set_password(password)
@@ -63,24 +63,15 @@ class UsuarioManager(BaseUserManager):
         apellido=""
     ):
 
-        user = self.create_user(
+        return self.create_user(
             usuario=usuario,
             email=email,
             password=password,
             nombre=nombre,
             apellido=apellido,
-            rol=1,
+            rol=0,
             activo=True
         )
-
-        user.is_staff = True
-        user.is_superuser = True
-
-        user.save(
-            using=self._db
-        )
-
-        return user
 
 
 class Usuario(
@@ -150,6 +141,7 @@ class Usuario(
     # ==========================================================
 
     ROL_CHOICES = (
+        (0, "superadmin"),
         (1, "admin"),
         (2, "empleado"),
     )

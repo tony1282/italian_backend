@@ -1,4 +1,10 @@
+from decimal import Decimal
+
 from rest_framework import serializers
+
+from django.db.models import Sum, Count
+
+from ventas.models import Venta
 
 from .models import CorteCaja, MovimientoCaja
 
@@ -17,6 +23,11 @@ class CorteCajaSerializer(
         read_only=True
     )
 
+    total_ventas = serializers.SerializerMethodField()
+    numero_ventas = serializers.SerializerMethodField()
+    total_reembolsos = serializers.SerializerMethodField()
+    efectivo_esperado_actual = serializers.SerializerMethodField()
+
     class Meta:
 
         model = CorteCaja
@@ -32,6 +43,10 @@ class CorteCajaSerializer(
             "efectivo_inicial",
             "efectivo_final",
             "diferencia",
+            "total_ventas",
+            "numero_ventas",
+            "total_reembolsos",
+            "efectivo_esperado_actual",
         ]
 
         read_only_fields = [
@@ -69,6 +84,73 @@ class CorteCajaSerializer(
             )
 
         return value
+
+    def get_total_ventas(self, obj):
+
+        resultado = (
+            Venta.objects
+            .filter(
+                corte_caja=obj,
+                estado="COMPLETADA"
+            )
+            .aggregate(total=Sum("total"))["total"]
+        )
+
+        return resultado or Decimal("0.00")
+
+    def get_numero_ventas(self, obj):
+
+        return (
+            Venta.objects
+            .filter(
+                corte_caja=obj,
+                estado="COMPLETADA"
+            )
+            .count()
+        )
+
+    def get_total_reembolsos(self, obj):
+
+        resultado = (
+            MovimientoCaja.objects
+            .filter(
+                corte_caja=obj,
+                tipo="REEMBOLSO"
+            )
+            .aggregate(total=Sum("monto"))["total"]
+        )
+
+        return resultado or Decimal("0.00")
+
+    def get_efectivo_esperado_actual(self, obj):
+
+        total_efectivo = (
+            Venta.objects
+            .filter(
+                corte_caja=obj,
+                estado="COMPLETADA",
+                metodo_pago__nombre="EFECTIVO"
+            )
+            .aggregate(total=Sum("total"))["total"]
+            or Decimal("0.00")
+        )
+
+        total_reembolsos_efectivo = (
+            MovimientoCaja.objects
+            .filter(
+                corte_caja=obj,
+                tipo="REEMBOLSO",
+                metodo_pago__nombre="EFECTIVO"
+            )
+            .aggregate(total=Sum("monto"))["total"]
+            or Decimal("0.00")
+        )
+
+        return (
+            obj.efectivo_inicial
+            + total_efectivo
+            - total_reembolsos_efectivo
+        )
 
 
 class MovimientoCajaSerializer(

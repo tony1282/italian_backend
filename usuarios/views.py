@@ -32,12 +32,13 @@ from .models import Usuario
 
 from .serializers import (
     UsuarioSerializer,
+    UsuarioReadSerializer,
     CrearAdminSerializer,
     LoginSerializer,
     RefreshSerializer
 )
 
-from .permissions import IsAdmin
+from .permissions import IsAdmin, IsSuperAdmin
 
 from bitacora.services import (
     registrar_bitacora
@@ -61,9 +62,7 @@ class UsuarioViewSet(
     viewsets.ModelViewSet
 ):
 
-    queryset = Usuario.objects.filter(
-        activo=True
-    )
+    queryset = Usuario.objects.all()
 
     serializer_class = UsuarioSerializer
 
@@ -72,9 +71,16 @@ class UsuarioViewSet(
         IsAdmin
     ]
 
+    def get_serializer_class(self):
+
+        if self.action in ("list", "retrieve"):
+            return UsuarioReadSerializer
+
+        return UsuarioSerializer
 
     # ==========================================================
-    # CREAR USUARIO
+    # CREAR USUARIO (empleado)
+    # Solo admin y superadmin pueden crear empleados
     # ==========================================================
 
     def create(
@@ -158,12 +164,14 @@ class UsuarioViewSet(
 
     # ==========================================================
     # CREAR ADMINISTRADOR
+    # Solo superadmin puede crear admins
     # ==========================================================
 
     @action(
         detail=False,
         methods=["post"],
-        url_path="crear-admin"
+        url_path="crear-admin",
+        permission_classes=[IsSuperAdmin]
     )
     def crear_admin(
         self,
@@ -230,6 +238,8 @@ class UsuarioViewSet(
 
     # ==========================================================
     # MODIFICAR USUARIO
+    # Superadmin: puede modificar admins y empleados (no a sí mismo)
+    # Admin: solo puede modificar empleados
     # ==========================================================
 
     def update(
@@ -247,10 +257,30 @@ class UsuarioViewSet(
         instance = self.get_object()
 
         # ------------------------------------------------------
-        # NO PERMITIR MODIFICAR ADMINISTRADORES
+        # NADIE SE MODIFICA A SÍ MISMO DESDE ESTE ENDPOINT
         # ------------------------------------------------------
 
-        if instance.rol == 1:
+        if instance.id == request.user.id:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No puedes modificarte a ti mismo."
+                    ),
+                    "data": None
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ------------------------------------------------------
+        # ADMIN NORMAL NO PUEDE MODIFICAR OTROS ADMINS NI SUPERADMINS
+        # ------------------------------------------------------
+
+        if (
+            request.user.rol == 1
+            and instance.rol in (0, 1)
+        ):
 
             return Response(
 
@@ -258,14 +288,33 @@ class UsuarioViewSet(
                     "success": False,
 
                     "message": (
-                        "Los administradores "
-                        "no pueden modificarse desde "
-                        "este endpoint."
+                        "No tienes permisos para modificar "
+                        "a este usuario."
                     ),
 
                     "data": None
                 },
 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ------------------------------------------------------
+        # SUPERADMIN NO PUEDE MODIFICAR OTROS SUPERADMINS
+        # ------------------------------------------------------
+
+        if (
+            request.user.rol == 0
+            and instance.rol == 0
+        ):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No puedes modificar a otro superadministrador."
+                    ),
+                    "data": None
+                },
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -348,7 +397,9 @@ class UsuarioViewSet(
 
 
     # ==========================================================
-    # DESACTIVAR USUARIO
+    # DESACTIVAR / ACTIVAR USUARIO
+    # Superadmin: puede desactivar/activar admins y empleados (no a sí mismo)
+    # Admin: solo puede desactivar/activar empleados (no a sí mismo)
     # ==========================================================
 
     def destroy(
@@ -361,7 +412,7 @@ class UsuarioViewSet(
         usuario = self.get_object()
 
         # ------------------------------------------------------
-        # AUTO-DESACTIVACIÓN
+        # NADIE SE DESACTIVA A SÍ MISMO
         # ------------------------------------------------------
 
         if usuario.id == request.user.id:
@@ -382,12 +433,14 @@ class UsuarioViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-
         # ------------------------------------------------------
-        # NO DESACTIVAR ADMINISTRADORES
+        # ADMIN NORMAL NO PUEDE DESACTIVAR ADMINS NI SUPERADMINS
         # ------------------------------------------------------
 
-        if usuario.rol == 1:
+        if (
+            request.user.rol == 1
+            and usuario.rol in (0, 1)
+        ):
 
             return Response(
 
@@ -395,13 +448,33 @@ class UsuarioViewSet(
                     "success": False,
 
                     "message": (
-                        "No puedes desactivar "
-                        "un administrador."
+                        "No tienes permisos para desactivar "
+                        "a este usuario."
                     ),
 
                     "data": None
                 },
 
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ------------------------------------------------------
+        # SUPERADMIN NO PUEDE DESACTIVAR OTROS SUPERADMINS
+        # ------------------------------------------------------
+
+        if (
+            request.user.rol == 0
+            and usuario.rol == 0
+        ):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No puedes desactivar a otro superadministrador."
+                    ),
+                    "data": None
+                },
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -453,6 +526,120 @@ class UsuarioViewSet(
                 "data": None
             },
 
+            status=status.HTTP_200_OK
+        )
+
+
+    # ==========================================================
+    # ACTIVAR USUARIO
+    # Superadmin: puede activar admins y empleados
+    # Admin: solo puede activar empleados
+    # ==========================================================
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="activar"
+    )
+    def activar(
+        self,
+        request,
+        pk=None
+    ):
+
+        usuario = self.get_object()
+
+        if usuario.id == request.user.id:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No puedes activarte a ti mismo."
+                    ),
+                    "data": None
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if (
+            request.user.rol == 1
+            and usuario.rol in (0, 1)
+        ):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No tienes permisos para activar "
+                        "a este usuario."
+                    ),
+                    "data": None
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if (
+            request.user.rol == 0
+            and usuario.rol == 0
+        ):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No puedes activar a otro superadministrador."
+                    ),
+                    "data": None
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if usuario.activo:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "El usuario ya está activo.",
+                    "data": None
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+
+            usuario.activo = True
+
+            usuario.save(
+                update_fields=[
+                    "activo",
+                    "fecha_actualizacion"
+                ]
+            )
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Usuarios",
+
+                accion="ACTIVAR_USUARIO",
+
+                descripcion=(
+                    f"Usuario '{usuario.usuario}' "
+                    f"activado correctamente por "
+                    f"{request.user.nombre} "
+                    f"{request.user.apellido}."
+                )
+
+            )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Usuario activado correctamente.",
+                "data": None
+            },
             status=status.HTTP_200_OK
         )
 

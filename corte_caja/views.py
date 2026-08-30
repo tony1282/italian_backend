@@ -402,7 +402,7 @@ class CorteCajaViewSet(
             # o un administrador puede cerrarlo.
 
             if (
-                request.user.rol != 1
+                request.user.rol not in (0, 1)
                 and corte.usuario_id != request.user.id
             ):
 

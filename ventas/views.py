@@ -1204,7 +1204,7 @@ class VentaViewSet(
             # --------------------------------------------------
 
             if (
-                request.user.rol != 1
+                request.user.rol not in (0, 1)
                 and venta.usuario_id != request.user.id
             ):
 

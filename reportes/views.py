@@ -105,10 +105,8 @@ def _parsear_fecha(
 
     try:
 
-        fecha = datetime.strptime(
-            valor,
-            "%Y-%m-%d"
-        ).date()
+        from datetime import date
+        fecha = date.fromisoformat(valor)
 
     except ValueError:
 

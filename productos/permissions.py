@@ -41,4 +41,4 @@ class ProductoPermission(
         # SOLO ADMINISTRADOR
         # --------------------------------------------------
 
-        return request.user.rol == 1
+        return request.user.rol in (0, 1)

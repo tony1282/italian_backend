@@ -13,7 +13,38 @@ from rest_framework.exceptions import (
 
 
 # ==========================================================
-# USUARIO
+# USUARIO — LECTURA
+# ==========================================================
+
+class UsuarioReadSerializer(
+    serializers.ModelSerializer
+):
+
+    rol_nombre = serializers.CharField(
+        source="get_rol_display",
+        read_only=True
+    )
+
+    class Meta:
+
+        model = Usuario
+
+        fields = [
+            "id",
+            "nombre",
+            "apellido",
+            "usuario",
+            "email",
+            "rol",
+            "rol_nombre",
+            "activo",
+            "fecha_creacion",
+            "fecha_actualizacion",
+        ]
+
+
+# ==========================================================
+# USUARIO — ESCRITURA
 # ==========================================================
 
 class UsuarioSerializer(
