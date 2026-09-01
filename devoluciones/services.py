@@ -707,28 +707,15 @@ def aprobar_devolucion(
         # STOCK ANTERIOR
         # ------------------------------------------------------
 
-        stock_anterior = (
-            variante.stock
-        )
+        stock_anterior = variante.stock
+        stock_defectuoso_anterior = variante.stock_defectuoso
 
-        # ------------------------------------------------------
-        # STOCK NUEVO
-        # ------------------------------------------------------
-
-        stock_nuevo = (
-            stock_anterior
-            +
-            detalle.cantidad
-        )
-        
-        stock_defectuoso_anterior = (
-            variante.stock_defectuoso
-        )
-
-        stock_defectuoso_nuevo = (
-            stock_defectuoso_anterior
-        )
-
+        if devolucion.tipo == "DEFECTUOSO":
+            stock_nuevo = stock_anterior
+            stock_defectuoso_nuevo = stock_defectuoso_anterior + detalle.cantidad
+        else:
+            stock_nuevo = stock_anterior + detalle.cantidad
+            stock_defectuoso_nuevo = stock_defectuoso_anterior
 
         # ------------------------------------------------------
         # REGISTRAR MOVIMIENTO
@@ -745,17 +732,10 @@ def aprobar_devolucion(
             cantidad=detalle.cantidad,
 
             stock_nuevo=stock_nuevo,
-            
-            stock_defectuoso_anterior=(
-            
-            stock_defectuoso_anterior
-            
-            ),
 
-            stock_defectuoso_nuevo=(
-                stock_defectuoso_nuevo
-            ),
-    
+            stock_defectuoso_anterior=stock_defectuoso_anterior,
+
+            stock_defectuoso_nuevo=stock_defectuoso_nuevo,
 
             observaciones=(
                 f"Devolución {devolucion.id}"
@@ -770,10 +750,12 @@ def aprobar_devolucion(
         # ------------------------------------------------------
 
         variante.stock = stock_nuevo
+        variante.stock_defectuoso = stock_defectuoso_nuevo
 
         variante.save(
             update_fields=[
                 "stock",
+                "stock_defectuoso",
                 "fecha_actualizacion"
             ]
         )

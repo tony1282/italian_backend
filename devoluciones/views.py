@@ -211,6 +211,7 @@ class DevolucionDetailView(APIView):
 
             if request.data["tipo"] not in [
                 "NORMAL",
+                "DEFECTUOSO",
                 "GARANTIA",
                 "EXTRAORDINARIA"
             ]:

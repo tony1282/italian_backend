@@ -12,6 +12,7 @@ class Devolucion(models.Model):
 
     TIPO_CHOICES = (
         ("NORMAL", "Normal"),
+        ("DEFECTUOSO", "Defectuoso"),
         ("GARANTIA", "Garantía"),
         ("EXTRAORDINARIA", "Extraordinaria"),
     )

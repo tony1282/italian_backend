@@ -1,0 +1,92 @@
+
+        # ACTUALIZAR STOCK
+        variante.stock = stock_nuevo
+        variante.save(
+            update_fields=[
+                "stock",
+                "fecha_actualizacion"
+            ]
+        )
+
+    # 10. REGISTRAR REEMBOLSO EN CAJA
+    if metodo_pago.nombre == "EFECTIVO":
+        MovimientoCaja.objects.create(
+            corte_caja=corte,
+            metodo_pago=metodo_pago,
+            tipo="REEMBOLSO",
+            monto=devolucion.total_devuelto,
+            devolucion=devolucion,
+            observaciones=f"Reembolso de devolución {devolucion.id}",
+            usuario=usuario
+        )
+
+    # 11. APROBAR DEVOLUCIÓN
+    devolucion.estado = "APROBADA"
+    devolucion.save(update_fields=["estado"])
+
+    # BITÁCORA
+    registrar_bitacora(
+        usuario=usuario,
+        modulo="Devoluciones",
+        accion="DEVOLUCION_APROBADA",
+        descripcion=f"Devolución '{devolucion.id}' aprobada por {usuario.nombre} {usuario.apellido}. Venta: '{venta.folio}'. Total devuelto: ${devolucion.total_devuelto}. Método de reembolso: {metodo_pago.nombre}."
+    )
+
+    # 12. DETERMINAR SI TODA LA VENTA FUE DEVUELTA
+    venta_completamente_devuelta = True
+    detalles_venta = venta.detalles.all()
+    for detalle_venta in detalles_venta:
+        cantidad_devuelta = (
+            DetalleDevolucion.objects
+            .filter(
+                detalle_venta=detalle_venta,
+                devolucion__estado="APROBADA"
+            )
+            .aggregate(total=models.Sum("cantidad"))["total"]
+            or 0
+        )
+        if cantidad_devuelta < detalle_venta.cantidad:
+            venta_completamente_devuelta = False
+            break
+
+    # 13. ACTUALIZAR ESTADO DE VENTA
+    if venta_completamente_devuelta:
+        venta.estado = "DEVUELTA"
+        venta.save(update_fields=["estado"])
+
+    return devolucion
+
+
+# CAMBIAR ESTADO DE DEVOLUCIÓN
+@transaction.atomic
+def cambiar_estado_devolucion(
+    devolucion_id,
+    nuevo_estado,
+    usuario
+):
+    try:
+        devolucion = (
+            Devolucion.objects
+            .select_for_update()
+            .get(id=devolucion_id)
+        )
+    except Devolucion.DoesNotExist:
+        raise Exception("La devolución no existe.")
+
+    if devolucion.estado == "RECHAZADA":
+        raise Exception("No se puede cambiar el estado de una devolución rechazada.")
+
+    if devolucion.estado == "CANCELADA":
+        raise Exception("No se puede cambiar el estado de una devolución cancelada.")
+
+    devolucion.estado = nuevo_estado
+    devolucion.save(update_fields=["estado"])
+
+    registrar_bitacora(
+        usuario=usuario,
+        modulo="Devoluciones",
+        accion=f"DEVOLUCION_{nuevo_estado}",
+        descripcion=f"Devolución '{devolucion.id}' cambió a estado '{nuevo_estado}' por {usuario.nombre} {usuario.apellido}."
+    )
+
+    return devolucion

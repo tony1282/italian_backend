@@ -1,7 +1,8 @@
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
-from django.db.models import Max, Sum
+from django.db.models import Max, Sum, IntegerField, Value
+from django.db.models.functions import Coalesce
 
 from rest_framework import (
     viewsets,
@@ -27,7 +28,8 @@ from cajas.models import Caja
 from corte_caja.models import CorteCaja
 from inventario.models import MovimientoInventario
 
-from devoluciones.models import Devolucion
+from devoluciones.models import Devolucion, DetalleDevolucion
+from garantias.models import Garantia
 
 from bitacora.services import registrar_bitacora
 
@@ -1046,9 +1048,51 @@ class VentaViewSet(
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        # Obtener IDs de los detalles de esta venta
+        detalle_ids = [
+            d.id for d in venta.detalles.all()
+        ]
+
+        # Cantidades devueltas agrupadas por detalle_venta
+        devueltas_qs = (
+            DetalleDevolucion.objects
+            .filter(
+                detalle_venta_id__in=detalle_ids,
+                devolucion__estado__in=["PENDIENTE", "APROBADA"]
+            )
+            .values("detalle_venta_id")
+            .annotate(total=Coalesce(Sum("cantidad"), Value(0, output_field=IntegerField())))
+        )
+        devueltas_map = {
+            str(r["detalle_venta_id"]): r["total"]
+            for r in devueltas_qs
+        }
+
+        # Cantidades en garantía agrupadas por detalle_venta
+        garantias_qs = (
+            Garantia.objects
+            .filter(
+                detalle_venta_id__in=detalle_ids,
+                estado__in=["PENDIENTE", "APROBADA", "FINALIZADA"]
+            )
+            .values("detalle_venta_id")
+            .annotate(total=Coalesce(Sum("cantidad"), Value(0, output_field=IntegerField())))
+        )
+        garantias_map = {
+            str(r["detalle_venta_id"]): r["total"]
+            for r in garantias_qs
+        }
+
         productos = []
 
         for detalle in venta.detalles.all():
+
+            cantidad_devuelta = devueltas_map.get(str(detalle.id), 0)
+            cantidad_garantizada = garantias_map.get(str(detalle.id), 0)
+            cantidad_disponible = max(
+                detalle.cantidad - cantidad_devuelta - cantidad_garantizada,
+                0
+            )
 
             productos.append(
                 {
@@ -1072,6 +1116,8 @@ class VentaViewSet(
                     "cantidad": (
                         detalle.cantidad
                     ),
+
+                    "cantidad_disponible": cantidad_disponible,
 
                     "precio_unitario": (
                         detalle.precio_unitario

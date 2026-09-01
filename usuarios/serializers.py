@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 
 from .models import Usuario
@@ -71,6 +73,43 @@ class UsuarioSerializer(
             }
 
         }
+
+
+    # ======================================================
+    # VALIDAR CONTRASEÑA
+    # ======================================================
+
+    def validate_password(
+        self,
+        value
+    ):
+
+        if len(value) < 8:
+            raise serializers.ValidationError(
+                "La contraseña debe tener al menos 8 caracteres."
+            )
+
+        if not re.search(r"[A-Z]", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos una mayúscula."
+            )
+
+        if not re.search(r"[a-z]", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos una minúscula."
+            )
+
+        if not re.search(r"\d", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos un número."
+            )
+
+        if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos un carácter especial."
+            )
+
+        return value
 
 
     # ======================================================
@@ -232,6 +271,43 @@ class CrearAdminSerializer(
             }
 
         }
+
+
+    # ======================================================
+    # VALIDAR CONTRASEÑA
+    # ======================================================
+
+    def validate_password(
+        self,
+        value
+    ):
+
+        if len(value) < 8:
+            raise serializers.ValidationError(
+                "La contraseña debe tener al menos 8 caracteres."
+            )
+
+        if not re.search(r"[A-Z]", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos una mayúscula."
+            )
+
+        if not re.search(r"[a-z]", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos una minúscula."
+            )
+
+        if not re.search(r"\d", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos un número."
+            )
+
+        if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]", value):
+            raise serializers.ValidationError(
+                "La contraseña debe contener al menos un carácter especial."
+            )
+
+        return value
 
 
     # ======================================================

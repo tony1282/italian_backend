@@ -33,11 +33,11 @@ DEBUG = os.getenv("DEBUG") == "True"
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "refers-clarke-dressing-dealer.trycloudflare.com",
+    "colleagues-cross-civic-bra.trycloudflare.com",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://refers-clarke-dressing-dealer.trycloudflare.com",
+    "https://colleagues-cross-civic-bra.trycloudflare.com",
 ]
 
 # En producción cambiar a False y listar solo los orígenes permitidos.

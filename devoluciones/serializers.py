@@ -28,6 +28,7 @@ class CrearDevolucionSerializer(
     tipo = serializers.ChoiceField(
         choices=[
             "NORMAL",
+            "DEFECTUOSO",
             "GARANTIA",
             "EXTRAORDINARIA"
         ]
