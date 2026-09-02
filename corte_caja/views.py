@@ -57,17 +57,28 @@ class CorteCajaViewSet(
     viewsets.GenericViewSet
 ):
 
-    queryset = (
-        CorteCaja.objects
-        .select_related(
-            "caja",
-            "usuario"
-        )
-        .all()
-        .order_by("-fecha_inicio")
-    )
+    queryset = CorteCaja.objects.none()
 
     serializer_class = CorteCajaSerializer
+
+    def get_queryset(self):
+
+        qs = (
+            CorteCaja.objects
+            .select_related(
+                "caja",
+                "usuario"
+            )
+            .order_by("-fecha_inicio")
+        )
+
+        if self.request.user.rol not in (0, 1):
+
+            qs = qs.filter(
+                usuario=self.request.user
+            )
+
+        return qs
 
     permission_classes = [
         IsAuthenticated
@@ -565,11 +576,7 @@ class CorteCajaViewSet(
             )
 
         corte = (
-            CorteCaja.objects
-            .select_related(
-                "caja",
-                "usuario"
-            )
+            self.get_queryset()
             .filter(
                 caja_id=caja_id,
                 fecha_fin__isnull=True
@@ -643,16 +650,9 @@ class CorteCajaViewSet(
             )
 
         cortes = (
-            CorteCaja.objects
-            .select_related(
-                "caja",
-                "usuario"
-            )
+            self.get_queryset()
             .filter(
                 caja_id=caja_id
-            )
-            .order_by(
-                "-fecha_inicio"
             )
         )
 

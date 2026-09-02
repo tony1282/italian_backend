@@ -7,6 +7,8 @@ class CrearGarantiaSerializer(serializers.Serializer):
 
     venta_id = serializers.UUIDField()
 
+    detalle_venta_id = serializers.UUIDField()
+
     variante_id = serializers.UUIDField()
 
     cantidad = serializers.IntegerField(

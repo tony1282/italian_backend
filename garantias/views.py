@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -5,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 
 from usuarios.permissions import IsAdmin
+from config.exceptions import BusinessException
 
 from .models import Garantia
 from .serializers import (
@@ -88,7 +91,7 @@ class GarantiaListCreateView(APIView):
                 status=status.HTTP_201_CREATED
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -96,6 +99,20 @@ class GarantiaListCreateView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en crear_garantia"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -299,7 +316,7 @@ class GarantiaAprobarView(APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -307,6 +324,20 @@ class GarantiaAprobarView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en aprobar_garantia"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -346,7 +377,7 @@ class GarantiaRechazarView(APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -354,6 +385,20 @@ class GarantiaRechazarView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en rechazar_garantia"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -393,7 +438,7 @@ class GarantiaFinalizarView(APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -401,4 +446,18 @@ class GarantiaFinalizarView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en finalizar_garantia"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

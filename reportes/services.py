@@ -11,6 +11,8 @@ from django.utils import timezone
 
 from ventas.models import Venta
 
+from detalle_venta.models import DetalleVenta
+
 from variantes.models import Variante
 
 from inventario.models import MovimientoInventario
@@ -370,10 +372,7 @@ def reporte_productos(
         .prefetch_related(
             Prefetch(
                 "detalles",
-                queryset=__import__(
-                    "detalle_venta.models",
-                    fromlist=["DetalleVenta"]
-                ).DetalleVenta.objects.select_related(
+                queryset=DetalleVenta.objects.select_related(
                     "variante",
                     "variante__producto"
                 )

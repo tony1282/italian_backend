@@ -14,6 +14,7 @@ from devoluciones.models import (
 )
 
 from bitacora.services import registrar_bitacora
+from config.exceptions import BusinessException
 
 from .models import Garantia
 
@@ -44,7 +45,7 @@ def crear_garantia(
 
     except Venta.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La venta no existe."
         )
 
@@ -54,13 +55,13 @@ def crear_garantia(
 
     if venta.estado == "CANCELADA":
 
-        raise Exception(
+        raise BusinessException(
             "No se puede crear una garantía para una venta cancelada."
         )
 
     if venta.estado == "DEVUELTA":
 
-        raise Exception(
+        raise BusinessException(
             "No se puede crear una garantía para una venta devuelta."
         )
 
@@ -79,7 +80,7 @@ def crear_garantia(
 
     except Variante.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La variante no existe."
         )
 
@@ -93,15 +94,23 @@ def crear_garantia(
             DetalleVenta.objects
             .select_for_update()
             .get(
-                venta=venta,
-                variante=variante
+                id=data["detalle_venta_id"],
+                venta=venta
             )
         )
 
     except DetalleVenta.DoesNotExist:
 
-        raise Exception(
-            "La variante no pertenece a la venta indicada."
+        raise BusinessException(
+            "El detalle de venta no existe o no pertenece a la venta indicada."
+        )
+
+    variante = detalle_venta.variante
+
+    if str(variante.id) != str(data["variante_id"]):
+
+        raise BusinessException(
+            "La variante no corresponde al detalle de venta."
         )
 
     # ========================================================
@@ -112,13 +121,13 @@ def crear_garantia(
 
     if cantidad <= 0:
 
-        raise Exception(
+        raise BusinessException(
             "La cantidad debe ser mayor que cero."
         )
 
     if cantidad > detalle_venta.cantidad:
 
-        raise Exception(
+        raise BusinessException(
             "La cantidad solicitada para garantía "
             "no puede superar la cantidad vendida."
         )
@@ -129,7 +138,7 @@ def crear_garantia(
 
     if not variante.garantia_meses:
 
-        raise Exception(
+        raise BusinessException(
             "Este producto no tiene garantía configurada."
         )
 
@@ -146,7 +155,7 @@ def crear_garantia(
 
     if timezone.now() > fecha_limite:
 
-        raise Exception(
+        raise BusinessException(
             "La garantía de este producto venció el "
             f"{fecha_limite.strftime('%d/%m/%Y')}."
         )
@@ -204,7 +213,7 @@ def crear_garantia(
 
     if cantidad > cantidad_disponible:
 
-        raise Exception(
+        raise BusinessException(
             "La cantidad solicitada supera las unidades "
             "disponibles para garantía. "
             f"Disponibles: {cantidad_disponible}."
@@ -291,7 +300,7 @@ def aprobar_garantia(
 
     except Garantia.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La garantía no existe."
         )
 
@@ -301,7 +310,7 @@ def aprobar_garantia(
 
     if garantia.estado != "PENDIENTE":
 
-        raise Exception(
+        raise BusinessException(
             "Solo se pueden aprobar garantías pendientes."
         )
 
@@ -333,7 +342,7 @@ def aprobar_garantia(
 
         if variante.stock < cantidad:
 
-            raise Exception(
+            raise BusinessException(
                 "Stock insuficiente para realizar el reemplazo. "
                 f"Stock disponible: {variante.stock}. "
                 f"Cantidad requerida: {cantidad}."
@@ -475,7 +484,7 @@ def aprobar_garantia(
 
         if not variante_nueva_id:
 
-            raise Exception(
+            raise BusinessException(
                 "Debe especificar la variante nueva."
             )
 
@@ -507,7 +516,7 @@ def aprobar_garantia(
 
         except Variante.DoesNotExist:
 
-            raise Exception(
+            raise BusinessException(
                 "La variante nueva no existe."
             )
 
@@ -517,7 +526,7 @@ def aprobar_garantia(
 
         if variante_original.id == variante_nueva.id:
 
-            raise Exception(
+            raise BusinessException(
                 "La variante nueva debe ser diferente "
                 "a la variante original."
             )
@@ -528,7 +537,7 @@ def aprobar_garantia(
 
         if variante_nueva.stock < cantidad:
 
-            raise Exception(
+            raise BusinessException(
                 "Stock insuficiente en la variante nueva "
                 "para realizar el cambio. "
                 f"Stock disponible: {variante_nueva.stock}. "
@@ -570,7 +579,8 @@ def aprobar_garantia(
         variante_original.save(
             update_fields=[
                 "stock",
-                "stock_defectuoso"
+                "stock_defectuoso",
+                "fecha_actualizacion",
             ]
         )
 
@@ -631,7 +641,8 @@ def aprobar_garantia(
 
         variante_nueva.save(
             update_fields=[
-                "stock"
+                "stock",
+                "fecha_actualizacion",
             ]
         )
 
@@ -756,7 +767,7 @@ def rechazar_garantia(
 
     except Garantia.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La garantía no existe."
         )
 
@@ -766,7 +777,7 @@ def rechazar_garantia(
 
     if garantia.estado != "PENDIENTE":
 
-        raise Exception(
+        raise BusinessException(
             "Solo se pueden rechazar garantías pendientes."
         )
 
@@ -843,7 +854,7 @@ def finalizar_garantia(
 
     except Garantia.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La garantía no existe."
         )
 
@@ -853,7 +864,7 @@ def finalizar_garantia(
 
     if garantia.estado != "APROBADA":
 
-        raise Exception(
+        raise BusinessException(
             "Solo se pueden finalizar garantías aprobadas."
         )
 

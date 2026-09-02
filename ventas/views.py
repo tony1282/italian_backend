@@ -1,6 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
-from django.db import transaction
+from django.db import transaction, connection
 from django.db.models import Max, Sum, IntegerField, Value
 from django.db.models.functions import Coalesce
 
@@ -273,36 +273,6 @@ class VentaViewSet(
             )
 
         # ======================================================
-        # CORTE ABIERTO
-        # ======================================================
-
-        try:
-
-            corte = (
-                CorteCaja.objects
-                .select_related(
-                    "caja"
-                )
-                .get(
-                    caja=caja,
-                    fecha_fin__isnull=True
-                )
-            )
-
-        except CorteCaja.DoesNotExist:
-
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "La caja no tiene un corte abierto."
-                    ),
-                    "data": None
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # ======================================================
         # MÉTODO DE PAGO
         # ======================================================
 
@@ -374,6 +344,71 @@ class VentaViewSet(
         with transaction.atomic():
 
             # ==================================================
+            # BLOQUEO EXCLUSIVO PARA GENERACIÓN DE FOLIO
+            # Y SINCRONIZACIÓN CON CIERRE DE CAJA
+            #
+            # pg_advisory_xact_lock garantiza que dos ventas
+            # concurrentes no puedan generar el mismo folio.
+            # El lock se libera automáticamente al finalizar
+            # la transacción.
+            # ==================================================
+
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext('ventas_folio'))"
+                )
+
+            # ==================================================
+            # BLOQUEAR Y RE-VERIFICAR CORTE ABIERTO
+            # ==================================================
+
+            try:
+
+                corte = (
+                    CorteCaja.objects
+                    .select_for_update()
+                    .select_related("caja")
+                    .get(
+                        caja=caja,
+                        fecha_fin__isnull=True
+                    )
+                )
+
+            except CorteCaja.DoesNotExist:
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "La caja no tiene un corte abierto."
+                        ),
+                        "data": None
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # ==================================================
+            # VERIFICAR PROPIETARIO DEL CORTE
+            # ==================================================
+
+            if (
+                request.user.rol not in (0, 1)
+                and corte.usuario_id != request.user.id
+            ):
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "Esta caja está siendo "
+                            "utilizada por otro empleado."
+                        ),
+                        "data": None
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # ==================================================
             # SUBTOTAL
             # ==================================================
 
@@ -387,7 +422,6 @@ class VentaViewSet(
 
             ultima = (
                 Venta.objects
-                .select_for_update()
                 .aggregate(
                     Max("folio")
                 )
@@ -780,7 +814,11 @@ class VentaViewSet(
                     cantidad=cantidad,
 
                     stock_nuevo=stock_nuevo,
-                    
+
+                    stock_defectuoso_anterior=(
+                        stock_defectuoso_anterior
+                    ),
+
                     stock_defectuoso_nuevo=(
                         stock_defectuoso_anterior
                     ),

@@ -1,7 +1,14 @@
+import logging
+
+from django.db import transaction
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+
+from config.pagination import StandardPagination
+from config.exceptions import BusinessException
 
 from .permissions import EsAdministrador
 
@@ -34,17 +41,20 @@ class DevolucionListCreateView(APIView):
             "-fecha"
         )
 
-        serializer = DevolucionSerializer(
+        paginator = StandardPagination()
+
+        pagina = paginator.paginate_queryset(
             devoluciones,
+            request
+        )
+
+        serializer = DevolucionSerializer(
+            pagina,
             many=True
         )
 
-        return Response(
-            {
-                "success": True,
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+        return paginator.get_paginated_response(
+            serializer.data
         )
 
 
@@ -82,7 +92,7 @@ class DevolucionListCreateView(APIView):
                 status=status.HTTP_201_CREATED
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -90,6 +100,20 @@ class DevolucionListCreateView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en crear_devolucion"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -148,140 +172,144 @@ class DevolucionDetailView(APIView):
         id
     ):
 
-        try:
-
-            devolucion = Devolucion.objects.get(
-                id=id
-            )
-
-        except Devolucion.DoesNotExist:
-
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "La devolución no existe."
-                    )
-                },
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-
-        if devolucion.estado != "PENDIENTE":
-
-            return Response(
-                {
-                    "success": False,
-                    "message": (
-                        "Solo se pueden modificar "
-                        "devoluciones pendientes."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-
-        # Por seguridad no permitimos modificar
-        # venta, detalles ni total directamente.
-
-        campos_permitidos = [
-            "tipo",
-            "motivo",
-            "metodo_pago_reembolso_id"
-        ]
-
-
-        for campo in request.data:
-
-            if campo not in campos_permitidos:
-
-                return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            f"El campo '{campo}' "
-                            "no puede modificarse."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-
-        if "tipo" in request.data:
-
-            if request.data["tipo"] not in [
-                "NORMAL",
-                "DEFECTUOSO",
-                "GARANTIA",
-                "EXTRAORDINARIA"
-            ]:
-
-                return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            "Tipo de devolución no válido."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            devolucion.tipo = request.data["tipo"]
-
-
-        if "motivo" in request.data:
-
-            devolucion.motivo = request.data[
-                "motivo"
-            ]
-
-
-        if "metodo_pago_reembolso_id" in request.data:
-
-            from metodos_pago.models import MetodoPago
+        with transaction.atomic():
 
             try:
 
-                metodo = MetodoPago.objects.get(
-                    id=request.data[
-                        "metodo_pago_reembolso_id"
-                    ],
-                    activo=True
+                devolucion = (
+                    Devolucion.objects
+                    .select_for_update()
+                    .get(id=id)
                 )
 
-            except MetodoPago.DoesNotExist:
+            except Devolucion.DoesNotExist:
 
                 return Response(
                     {
                         "success": False,
                         "message": (
-                            "El método de reembolso "
-                            "no existe o está inactivo."
+                            "La devolución no existe."
+                        )
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+
+            if devolucion.estado != "PENDIENTE":
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "Solo se pueden modificar "
+                            "devoluciones pendientes."
                         )
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            devolucion.metodo_pago_reembolso = metodo
+
+            # Por seguridad no permitimos modificar
+            # venta, detalles ni total directamente.
+
+            campos_permitidos = [
+                "tipo",
+                "motivo",
+                "metodo_pago_reembolso_id"
+            ]
 
 
-        devolucion.save()
+            for campo in request.data:
+
+                if campo not in campos_permitidos:
+
+                    return Response(
+                        {
+                            "success": False,
+                            "message": (
+                                f"El campo '{campo}' "
+                                "no puede modificarse."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
 
-        serializer = DevolucionSerializer(
-            devolucion
-        )
+            if "tipo" in request.data:
 
-        return Response(
-            {
-                "success": True,
-                "message": (
-                    "Devolución actualizada correctamente."
-                ),
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
-        )
+                if request.data["tipo"] not in [
+                    "NORMAL",
+                    "DEFECTUOSO",
+                    "GARANTIA",
+                    "EXTRAORDINARIA"
+                ]:
+
+                    return Response(
+                        {
+                            "success": False,
+                            "message": (
+                                "Tipo de devolución no válido."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                devolucion.tipo = request.data["tipo"]
+
+
+            if "motivo" in request.data:
+
+                devolucion.motivo = request.data[
+                    "motivo"
+                ]
+
+
+            if "metodo_pago_reembolso_id" in request.data:
+
+                from metodos_pago.models import MetodoPago
+
+                try:
+
+                    metodo = MetodoPago.objects.get(
+                        id=request.data[
+                            "metodo_pago_reembolso_id"
+                        ],
+                        activo=True
+                    )
+
+                except MetodoPago.DoesNotExist:
+
+                    return Response(
+                        {
+                            "success": False,
+                            "message": (
+                                "El método de reembolso "
+                                "no existe o está inactivo."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                devolucion.metodo_pago_reembolso = metodo
+
+
+            devolucion.save()
+
+
+            serializer = DevolucionSerializer(
+                devolucion
+            )
+
+            return Response(
+                {
+                    "success": True,
+                    "message": (
+                        "Devolución actualizada correctamente."
+                    ),
+                    "data": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
 
 
 class DevolucionAprobarView(APIView):
@@ -322,7 +350,7 @@ class DevolucionAprobarView(APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -330,6 +358,20 @@ class DevolucionAprobarView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en aprobar_devolucion"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -372,7 +414,7 @@ class DevolucionRechazarView(APIView):
                 status=status.HTTP_200_OK
             )
 
-        except Exception as e:
+        except BusinessException as e:
 
             return Response(
                 {
@@ -380,4 +422,18 @@ class DevolucionRechazarView(APIView):
                     "message": str(e)
                 },
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception:
+
+            logging.getLogger(__name__).exception(
+                "Error inesperado en cambiar_estado_devolucion"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Error interno del servidor."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

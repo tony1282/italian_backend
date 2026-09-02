@@ -22,6 +22,7 @@ from .models import (
 from variantes.models import Variante
 
 from bitacora.services import registrar_bitacora
+from config.exceptions import BusinessException
 
 
 # ==============================================================
@@ -54,7 +55,7 @@ def crear_devolucion(
 
     except Venta.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La venta no existe."
         )
 
@@ -64,13 +65,13 @@ def crear_devolucion(
 
     if venta.estado == "CANCELADA":
 
-        raise Exception(
+        raise BusinessException(
             "No se puede devolver una venta cancelada."
         )
 
     if venta.estado == "DEVUELTA":
 
-        raise Exception(
+        raise BusinessException(
             "La venta ya fue devuelta completamente."
         )
 
@@ -84,7 +85,7 @@ def crear_devolucion(
 
         if not empresa:
 
-            raise Exception(
+            raise BusinessException(
                 "No existe configuración de empresa."
             )
 
@@ -98,7 +99,7 @@ def crear_devolucion(
 
         if diferencia > dias:
 
-            raise Exception(
+            raise BusinessException(
                 "El periodo de devolución expiró."
             )
 
@@ -122,7 +123,7 @@ def crear_devolucion(
 
     except MetodoPago.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "El método de reembolso no existe o está inactivo."
         )
 
@@ -173,7 +174,7 @@ def crear_devolucion(
 
     if subtotal_bruto_venta <= 0:
 
-        raise Exception(
+        raise BusinessException(
             "La venta no tiene un subtotal válido."
         )
 
@@ -211,7 +212,7 @@ def crear_devolucion(
 
         except DetalleVenta.DoesNotExist:
 
-            raise Exception(
+            raise BusinessException(
                 "El producto no pertenece a la venta."
             )
 
@@ -223,7 +224,7 @@ def crear_devolucion(
 
         if cantidad <= 0:
 
-            raise Exception(
+            raise BusinessException(
                 "La cantidad debe ser mayor a cero."
             )
 
@@ -284,7 +285,7 @@ def crear_devolucion(
 
         if cantidad > disponible:
 
-            raise Exception(
+            raise BusinessException(
                 "La cantidad solicitada para devolución "
                 "supera las unidades disponibles. "
                 f"Disponibles: {disponible}."
@@ -357,7 +358,7 @@ def crear_devolucion(
 
     if total <= 0:
 
-        raise Exception(
+        raise BusinessException(
             "El importe de la devolución "
             "debe ser mayor que cero."
         )
@@ -486,7 +487,7 @@ def aprobar_devolucion(
 
     except Devolucion.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La devolución no existe."
         )
 
@@ -496,7 +497,7 @@ def aprobar_devolucion(
 
     if devolucion.estado != "PENDIENTE":
 
-        raise Exception(
+        raise BusinessException(
             "Solo se pueden aprobar devoluciones pendientes."
         )
 
@@ -516,7 +517,7 @@ def aprobar_devolucion(
 
     except Venta.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La venta asociada no existe."
         )
 
@@ -526,14 +527,14 @@ def aprobar_devolucion(
 
     if venta.estado == "CANCELADA":
 
-        raise Exception(
+        raise BusinessException(
             "No se puede aprobar una devolución "
             "de una venta cancelada."
         )
 
     if venta.estado == "DEVUELTA":
 
-        raise Exception(
+        raise BusinessException(
             "La venta ya fue devuelta completamente."
         )
 
@@ -543,7 +544,7 @@ def aprobar_devolucion(
 
     if not devolucion.metodo_pago_reembolso:
 
-        raise Exception(
+        raise BusinessException(
             "La devolución no tiene un método de reembolso."
         )
 
@@ -563,7 +564,7 @@ def aprobar_devolucion(
 
     if not detalles:
 
-        raise Exception(
+        raise BusinessException(
             "La devolución no tiene productos."
         )
 
@@ -644,7 +645,7 @@ def aprobar_devolucion(
 
         if detalle.cantidad > disponible:
 
-            raise Exception(
+            raise BusinessException(
                 "La cantidad devuelta supera "
                 "la cantidad disponible."
             )
@@ -660,7 +661,7 @@ def aprobar_devolucion(
 
         if not venta.corte_caja:
 
-            raise Exception(
+            raise BusinessException(
                 "La venta no tiene un corte de caja asociado."
             )
 
@@ -676,7 +677,7 @@ def aprobar_devolucion(
 
         if not corte:
 
-            raise Exception(
+            raise BusinessException(
                 "No existe un corte de caja abierto "
                 "para registrar el reembolso."
             )
@@ -905,7 +906,7 @@ def cambiar_estado_devolucion(
 
     except Devolucion.DoesNotExist:
 
-        raise Exception(
+        raise BusinessException(
             "La devolución no existe."
         )
 
@@ -915,7 +916,7 @@ def cambiar_estado_devolucion(
 
     if devolucion.estado != "PENDIENTE":
 
-        raise Exception(
+        raise BusinessException(
             "Solo se pueden modificar "
             "devoluciones pendientes."
         )
@@ -926,7 +927,7 @@ def cambiar_estado_devolucion(
 
     if nuevo_estado != "RECHAZADA":
 
-        raise Exception(
+        raise BusinessException(
             "Para aprobar una devolución "
             "debe utilizarse el proceso de aprobación."
         )
