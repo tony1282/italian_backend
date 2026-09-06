@@ -7,12 +7,7 @@ from ventas.models import Venta
 from detalle_venta.models import DetalleVenta
 from variantes.models import Variante
 from inventario.models import MovimientoInventario
-
-from devoluciones.models import (
-    Devolucion,
-    DetalleDevolucion
-)
-
+from devoluciones.models import Devolucion, DetalleDevolucion
 from bitacora.services import registrar_bitacora
 from config.exceptions import BusinessException
 
@@ -20,251 +15,195 @@ from .models import Garantia
 
 
 # ============================================================
+# HELPERS CREAR GARANTÍA
+# ============================================================
+
+def _validar_venta(venta_id):
+    try:
+        venta = Venta.objects.select_for_update().get(id=venta_id)
+    except Venta.DoesNotExist:
+        raise BusinessException("La venta no existe.")
+    if venta.estado == "CANCELADA":
+        raise BusinessException("No se puede crear una garantía para una venta cancelada.")
+    if venta.estado == "DEVUELTA":
+        raise BusinessException("No se puede crear una garantía para una venta devuelta.")
+    return venta
+
+
+def _validar_detalle_variante(venta, data):
+    try:
+        detalle_venta = (
+            DetalleVenta.objects
+            .select_for_update()
+            .get(id=data["detalle_venta_id"], venta=venta)
+        )
+    except DetalleVenta.DoesNotExist:
+        raise BusinessException("El detalle de venta no existe o no pertenece a la venta indicada.")
+
+    variante = detalle_venta.variante
+    if str(variante.id) != str(data["variante_id"]):
+        raise BusinessException("La variante no corresponde al detalle de venta.")
+    return detalle_venta, variante
+
+
+def _validar_vigencia(venta, variante):
+    if not variante.garantia_meses:
+        raise BusinessException("Este producto no tiene garantía configurada.")
+    fecha_limite = venta.fecha + relativedelta(months=variante.garantia_meses)
+    if timezone.now() > fecha_limite:
+        raise BusinessException(
+            f"La garantía de este producto venció el {fecha_limite.strftime('%d/%m/%Y')}."
+        )
+
+
+def _validar_disponibilidad(detalle_venta, cantidad):
+    cantidad_garantizada = (
+        Garantia.objects
+        .filter(detalle_venta=detalle_venta, estado__in=["PENDIENTE", "APROBADA", "FINALIZADA"])
+        .aggregate(total=Sum("cantidad"))["total"] or 0
+    )
+    cantidad_devuelta = (
+        DetalleDevolucion.objects
+        .filter(detalle_venta=detalle_venta, devolucion__estado__in=["PENDIENTE", "APROBADA"])
+        .aggregate(total=Sum("cantidad"))["total"] or 0
+    )
+    disponible = max(detalle_venta.cantidad - cantidad_garantizada - cantidad_devuelta, 0)
+    if cantidad > disponible:
+        raise BusinessException(
+            f"La cantidad solicitada supera las unidades disponibles para garantía. "
+            f"Disponibles: {disponible}."
+        )
+
+
+# ============================================================
+# HELPERS APROBAR GARANTÍA
+# ============================================================
+
+def _crear_movimiento(variante, tipo, stock_anterior, cantidad, stock_nuevo,
+                      stock_defectuoso_anterior, stock_defectuoso_nuevo, observaciones, usuario):
+    MovimientoInventario.objects.create(
+        variante=variante,
+        tipo=tipo,
+        stock_anterior=stock_anterior,
+        cantidad=cantidad,
+        stock_nuevo=stock_nuevo,
+        stock_defectuoso_anterior=stock_defectuoso_anterior,
+        stock_defectuoso_nuevo=stock_defectuoso_nuevo,
+        observaciones=observaciones,
+        usuario=usuario,
+    )
+
+
+def _aprobar_reemplazo(garantia, cantidad, usuario):
+    variante = Variante.objects.select_for_update().get(id=garantia.variante_id)
+    if variante.stock < cantidad:
+        raise BusinessException(
+            f"Stock insuficiente para realizar el reemplazo. "
+            f"Stock disponible: {variante.stock}. Cantidad requerida: {cantidad}."
+        )
+
+    # Recibir defectuoso — no toca stock vendible
+    stock_ant = variante.stock
+    stock_def_ant = variante.stock_defectuoso
+    stock_def_nuevo = stock_def_ant + cantidad
+    variante.stock_defectuoso = stock_def_nuevo
+    variante.save(update_fields=["stock", "stock_defectuoso", "fecha_actualizacion"])
+    _crear_movimiento(variante, "GARANTIA", stock_ant, cantidad, stock_ant,
+                      stock_def_ant, stock_def_nuevo,
+                      f"Reemplazo por garantía {garantia.id} - entrada producto defectuoso", usuario)
+
+    # Entregar nuevo — descuenta stock vendible
+    stock_ant2 = variante.stock
+    stock_nuevo2 = stock_ant2 - cantidad
+    stock_def_actual = variante.stock_defectuoso
+    variante.stock = stock_nuevo2
+    variante.save(update_fields=["stock", "fecha_actualizacion"])
+    _crear_movimiento(variante, "GARANTIA", stock_ant2, cantidad, stock_nuevo2,
+                      stock_def_actual, stock_def_actual,
+                      f"Reemplazo por garantía {garantia.id} - salida producto nuevo", usuario)
+
+
+def _aprobar_cambio_producto(garantia, cantidad, data, usuario):
+    variante_nueva_id = data.get("variante_nueva_id")
+    if not variante_nueva_id:
+        raise BusinessException("Debe especificar la variante nueva.")
+
+    variante_original = Variante.objects.select_for_update().get(id=garantia.variante_id)
+    try:
+        variante_nueva = Variante.objects.select_for_update().get(id=variante_nueva_id)
+    except Variante.DoesNotExist:
+        raise BusinessException("La variante nueva no existe.")
+
+    if variante_original.id == variante_nueva.id:
+        raise BusinessException("La variante nueva debe ser diferente a la variante original.")
+    if variante_nueva.stock < cantidad:
+        raise BusinessException(
+            f"Stock insuficiente en la variante nueva para realizar el cambio. "
+            f"Stock disponible: {variante_nueva.stock}. Cantidad requerida: {cantidad}."
+        )
+
+    # Original defectuoso regresa
+    stock_orig_ant = variante_original.stock
+    stock_orig_def_ant = variante_original.stock_defectuoso
+    stock_orig_def_nuevo = stock_orig_def_ant + cantidad
+    variante_original.stock_defectuoso = stock_orig_def_nuevo
+    variante_original.save(update_fields=["stock", "stock_defectuoso", "fecha_actualizacion"])
+    _crear_movimiento(variante_original, "CAMBIO_PRODUCTO", stock_orig_ant, cantidad, stock_orig_ant,
+                      stock_orig_def_ant, stock_orig_def_nuevo,
+                      f"Cambio de producto por garantía {garantia.id} - entrada producto original defectuoso",
+                      usuario)
+
+    # Nueva variante sale
+    stock_nueva_ant = variante_nueva.stock
+    stock_nueva_nuevo = stock_nueva_ant - cantidad
+    stock_nueva_def = variante_nueva.stock_defectuoso
+    variante_nueva.stock = stock_nueva_nuevo
+    variante_nueva.save(update_fields=["stock", "fecha_actualizacion"])
+    _crear_movimiento(variante_nueva, "CAMBIO_PRODUCTO", stock_nueva_ant, cantidad, stock_nueva_nuevo,
+                      stock_nueva_def, stock_nueva_def,
+                      f"Cambio de producto por garantía {garantia.id} - salida producto nuevo", usuario)
+
+    garantia.variante_nueva = variante_nueva
+
+
+# ============================================================
 # CREAR GARANTÍA
 # ============================================================
 
 @transaction.atomic
-def crear_garantia(
-    data,
-    usuario
-):
-
-    # ========================================================
-    # 1. Buscar y bloquear la venta
-    # ========================================================
-
-    try:
-
-        venta = (
-            Venta.objects
-            .select_for_update()
-            .get(
-                id=data["venta_id"]
-            )
-        )
-
-    except Venta.DoesNotExist:
-
-        raise BusinessException(
-            "La venta no existe."
-        )
-
-    # ========================================================
-    # 2. Validar estado de la venta
-    # ========================================================
-
-    if venta.estado == "CANCELADA":
-
-        raise BusinessException(
-            "No se puede crear una garantía para una venta cancelada."
-        )
-
-    if venta.estado == "DEVUELTA":
-
-        raise BusinessException(
-            "No se puede crear una garantía para una venta devuelta."
-        )
-
-    # ========================================================
-    # 3. Buscar variante
-    # ========================================================
-
-    try:
-
-        variante = (
-            Variante.objects
-            .get(
-                id=data["variante_id"]
-            )
-        )
-
-    except Variante.DoesNotExist:
-
-        raise BusinessException(
-            "La variante no existe."
-        )
-
-    # ========================================================
-    # 4. Buscar y bloquear detalle de venta
-    # ========================================================
-
-    try:
-
-        detalle_venta = (
-            DetalleVenta.objects
-            .select_for_update()
-            .get(
-                id=data["detalle_venta_id"],
-                venta=venta
-            )
-        )
-
-    except DetalleVenta.DoesNotExist:
-
-        raise BusinessException(
-            "El detalle de venta no existe o no pertenece a la venta indicada."
-        )
-
-    variante = detalle_venta.variante
-
-    if str(variante.id) != str(data["variante_id"]):
-
-        raise BusinessException(
-            "La variante no corresponde al detalle de venta."
-        )
-
-    # ========================================================
-    # 5. Validar cantidad
-    # ========================================================
+def crear_garantia(data, usuario):
+    venta = _validar_venta(data["venta_id"])
+    detalle_venta, variante = _validar_detalle_variante(venta, data)
 
     cantidad = data["cantidad"]
-
     if cantidad <= 0:
-
-        raise BusinessException(
-            "La cantidad debe ser mayor que cero."
-        )
-
+        raise BusinessException("La cantidad debe ser mayor que cero.")
     if cantidad > detalle_venta.cantidad:
+        raise BusinessException("La cantidad solicitada para garantía no puede superar la cantidad vendida.")
 
-        raise BusinessException(
-            "La cantidad solicitada para garantía "
-            "no puede superar la cantidad vendida."
-        )
-
-    # ========================================================
-    # 6. Validar garantía configurada
-    # ========================================================
-
-    if not variante.garantia_meses:
-
-        raise BusinessException(
-            "Este producto no tiene garantía configurada."
-        )
-
-    # ========================================================
-    # 7. Validar vigencia
-    # ========================================================
-
-    fecha_limite = (
-        venta.fecha
-        + relativedelta(
-            months=variante.garantia_meses
-        )
-    )
-
-    if timezone.now() > fecha_limite:
-
-        raise BusinessException(
-            "La garantía de este producto venció el "
-            f"{fecha_limite.strftime('%d/%m/%Y')}."
-        )
-
-    # ========================================================
-    # 8. CALCULAR UNIDADES DISPONIBLES
-    #
-    # cantidad vendida
-    # - devoluciones pendientes/aprobadas
-    # - garantías pendientes/aprobadas/finalizadas
-    # ========================================================
-
-    cantidad_garantizada = (
-        Garantia.objects
-        .filter(
-            detalle_venta=detalle_venta,
-            estado__in=[
-                "PENDIENTE",
-                "APROBADA",
-                "FINALIZADA",
-            ]
-        )
-        .aggregate(
-            total=Sum("cantidad")
-        )["total"]
-        or 0
-    )
-
-    cantidad_devuelta = (
-        DetalleDevolucion.objects
-        .filter(
-            detalle_venta=detalle_venta,
-            devolucion__estado__in=[
-                "PENDIENTE",
-                "APROBADA",
-            ]
-        )
-        .aggregate(
-            total=Sum("cantidad")
-        )["total"]
-        or 0
-    )
-
-    cantidad_disponible = (
-        detalle_venta.cantidad
-        -
-        cantidad_garantizada
-        -
-        cantidad_devuelta
-    )
-
-    if cantidad_disponible < 0:
-
-        cantidad_disponible = 0
-
-    if cantidad > cantidad_disponible:
-
-        raise BusinessException(
-            "La cantidad solicitada supera las unidades "
-            "disponibles para garantía. "
-            f"Disponibles: {cantidad_disponible}."
-        )
-
-    # ========================================================
-    # 9. CREAR GARANTÍA
-    # ========================================================
+    _validar_vigencia(venta, variante)
+    _validar_disponibilidad(detalle_venta, cantidad)
 
     garantia = Garantia.objects.create(
-
         venta=venta,
-
         detalle_venta=detalle_venta,
-
         variante=variante,
-
         cantidad=cantidad,
-
         usuario=usuario,
-
         motivo=data["motivo"],
-
-        estado="PENDIENTE"
-
+        estado="PENDIENTE",
     )
-
-    # ========================================================
-    # BITÁCORA
-    # ========================================================
 
     registrar_bitacora(
-
         usuario=usuario,
-
         modulo="Garantias",
-
         accion="CREAR_GARANTIA",
-
         descripcion=(
-            f"Garantía {garantia.id} registrada "
-            f"para la venta '{venta.folio}' por "
-            f"{usuario.nombre} "
-            f"{usuario.apellido}. "
-            f"Variante: '{variante.nombre}'. "
-            f"Cantidad: {cantidad}. "
-            f"Motivo: {garantia.motivo}."
-        )
-
+            f"Garantía {garantia.id} registrada para la venta '{venta.folio}' por "
+            f"{usuario.nombre} {usuario.apellido}. "
+            f"Variante: '{variante.nombre}'. Cantidad: {cantidad}. Motivo: {garantia.motivo}."
+        ),
     )
-
     return garantia
 
 
@@ -273,470 +212,45 @@ def crear_garantia(
 # ============================================================
 
 @transaction.atomic
-def aprobar_garantia(
-    garantia_id,
-    data,
-    usuario
-):
-
-    # ========================================================
-    # 1. Buscar y bloquear garantía
-    # ========================================================
-
+def aprobar_garantia(garantia_id, data, usuario):
     try:
-
         garantia = (
             Garantia.objects
             .select_for_update()
-            .select_related(
-                "venta",
-                "detalle_venta",
-                "variante"
-            )
-            .get(
-                id=garantia_id
-            )
+            .select_related("venta", "detalle_venta", "variante")
+            .get(id=garantia_id)
         )
-
     except Garantia.DoesNotExist:
-
-        raise BusinessException(
-            "La garantía no existe."
-        )
-
-    # ========================================================
-    # 2. Validar estado
-    # ========================================================
+        raise BusinessException("La garantía no existe.")
 
     if garantia.estado != "PENDIENTE":
-
-        raise BusinessException(
-            "Solo se pueden aprobar garantías pendientes."
-        )
+        raise BusinessException("Solo se pueden aprobar garantías pendientes.")
 
     resolucion = data["resolucion"]
-
-    observaciones = data.get(
-        "observaciones"
-    )
-
     cantidad = garantia.cantidad
 
-    # ========================================================
-    # 3. REEMPLAZO
-    # ========================================================
-
     if resolucion == "REEMPLAZO":
-
-        variante = (
-            Variante.objects
-            .select_for_update()
-            .get(
-                id=garantia.variante_id
-            )
-        )
-
-        # ----------------------------------------------------
-        # Verificar stock vendible
-        # ----------------------------------------------------
-
-        if variante.stock < cantidad:
-
-            raise BusinessException(
-                "Stock insuficiente para realizar el reemplazo. "
-                f"Stock disponible: {variante.stock}. "
-                f"Cantidad requerida: {cantidad}."
-            )
-
-        # ----------------------------------------------------
-        # STOCK ORIGINAL
-        # ----------------------------------------------------
-
-        stock_anterior = variante.stock
-
-        stock_defectuoso_anterior = (
-            variante.stock_defectuoso
-        )
-
-        # ----------------------------------------------------
-        # RECIBIR PRODUCTO DEFECTUOSO
-        #
-        # NO aumenta el stock vendible.
-        # Aumenta stock_defectuoso.
-        # ----------------------------------------------------
-
-        stock_nuevo = stock_anterior
-
-        stock_defectuoso_nuevo = (
-            stock_defectuoso_anterior
-            + cantidad
-        )
-
-        variante.stock = stock_nuevo
-
-        variante.stock_defectuoso = (
-            stock_defectuoso_nuevo
-        )
-
-        variante.save(
-            update_fields=[
-                "stock",
-                "stock_defectuoso",
-                "fecha_actualizacion"
-            ]
-        )
-
-        MovimientoInventario.objects.create(
-
-            variante=variante,
-
-            tipo="GARANTIA",
-
-            stock_anterior=stock_anterior,
-
-            cantidad=cantidad,
-
-            stock_nuevo=stock_nuevo,
-
-            stock_defectuoso_anterior=(
-                stock_defectuoso_anterior
-            ),
-
-            stock_defectuoso_nuevo=(
-                stock_defectuoso_nuevo
-            ),
-
-            observaciones=(
-                f"Reemplazo por garantía "
-                f"{garantia.id} - "
-                "entrada producto defectuoso"
-            ),
-
-            usuario=usuario
-
-        )
-
-        # ----------------------------------------------------
-        # ENTREGAR PRODUCTO NUEVO
-        #
-        # Disminuye solamente stock vendible.
-        # ----------------------------------------------------
-
-        stock_anterior = variante.stock
-
-        stock_nuevo = (
-            stock_anterior
-            - cantidad
-        )
-
-        stock_defectuoso_actual = (
-            variante.stock_defectuoso
-        )
-
-        variante.stock = stock_nuevo
-
-        variante.save(
-            update_fields=[
-                "stock",
-                "fecha_actualizacion"
-            ]
-        )
-
-        MovimientoInventario.objects.create(
-
-            variante=variante,
-
-            tipo="GARANTIA",
-
-            stock_anterior=stock_anterior,
-
-            cantidad=cantidad,
-
-            stock_nuevo=stock_nuevo,
-
-            stock_defectuoso_anterior=(
-                stock_defectuoso_actual
-            ),
-
-            stock_defectuoso_nuevo=(
-                stock_defectuoso_actual
-            ),
-
-            observaciones=(
-                f"Reemplazo por garantía "
-                f"{garantia.id} - "
-                "salida producto nuevo"
-            ),
-
-            usuario=usuario
-
-        )
-
-    # ========================================================
-    # 4. CAMBIO_PRODUCTO
-    # ========================================================
-
+        _aprobar_reemplazo(garantia, cantidad, usuario)
     elif resolucion == "CAMBIO_PRODUCTO":
-
-        variante_nueva_id = data.get(
-            "variante_nueva_id"
-        )
-
-        if not variante_nueva_id:
-
-            raise BusinessException(
-                "Debe especificar la variante nueva."
-            )
-
-        # ----------------------------------------------------
-        # Bloquear variante original
-        # ----------------------------------------------------
-
-        variante_original = (
-            Variante.objects
-            .select_for_update()
-            .get(
-                id=garantia.variante_id
-            )
-        )
-
-        # ----------------------------------------------------
-        # Bloquear variante nueva
-        # ----------------------------------------------------
-
-        try:
-
-            variante_nueva = (
-                Variante.objects
-                .select_for_update()
-                .get(
-                    id=variante_nueva_id
-                )
-            )
-
-        except Variante.DoesNotExist:
-
-            raise BusinessException(
-                "La variante nueva no existe."
-            )
-
-        # ----------------------------------------------------
-        # No permitir misma variante
-        # ----------------------------------------------------
-
-        if variante_original.id == variante_nueva.id:
-
-            raise BusinessException(
-                "La variante nueva debe ser diferente "
-                "a la variante original."
-            )
-
-        # ----------------------------------------------------
-        # Validar stock de variante nueva
-        # ----------------------------------------------------
-
-        if variante_nueva.stock < cantidad:
-
-            raise BusinessException(
-                "Stock insuficiente en la variante nueva "
-                "para realizar el cambio. "
-                f"Stock disponible: {variante_nueva.stock}. "
-                f"Cantidad requerida: {cantidad}."
-            )
-
-        # ----------------------------------------------------
-        # PRODUCTO ORIGINAL DEFECTUOSO REGRESA
-        #
-        # NO aumenta stock vendible.
-        # Aumenta stock_defectuoso.
-        # ----------------------------------------------------
-
-        stock_original_anterior = (
-            variante_original.stock
-        )
-
-        stock_original_defectuoso_anterior = (
-            variante_original.stock_defectuoso
-        )
-
-        stock_original_nuevo = (
-            stock_original_anterior
-        )
-
-        stock_original_defectuoso_nuevo = (
-            stock_original_defectuoso_anterior
-            + cantidad
-        )
-
-        variante_original.stock = (
-            stock_original_nuevo
-        )
-
-        variante_original.stock_defectuoso = (
-            stock_original_defectuoso_nuevo
-        )
-
-        variante_original.save(
-            update_fields=[
-                "stock",
-                "stock_defectuoso",
-                "fecha_actualizacion",
-            ]
-        )
-
-        MovimientoInventario.objects.create(
-
-            variante=variante_original,
-
-            tipo="CAMBIO_PRODUCTO",
-
-            stock_anterior=(
-                stock_original_anterior
-            ),
-
-            cantidad=cantidad,
-
-            stock_nuevo=(
-                stock_original_nuevo
-            ),
-
-            stock_defectuoso_anterior=(
-                stock_original_defectuoso_anterior
-            ),
-
-            stock_defectuoso_nuevo=(
-                stock_original_defectuoso_nuevo
-            ),
-
-            observaciones=(
-                f"Cambio de producto por garantía "
-                f"{garantia.id} - "
-                "entrada producto original defectuoso"
-            ),
-
-            usuario=usuario
-
-        )
-
-        # ----------------------------------------------------
-        # PRODUCTO NUEVO SALE
-        # ----------------------------------------------------
-
-        stock_nueva_anterior = (
-            variante_nueva.stock
-        )
-
-        stock_nueva_nuevo = (
-            stock_nueva_anterior
-            - cantidad
-        )
-
-        stock_nueva_defectuoso = (
-            variante_nueva.stock_defectuoso
-        )
-
-        variante_nueva.stock = (
-            stock_nueva_nuevo
-        )
-
-        variante_nueva.save(
-            update_fields=[
-                "stock",
-                "fecha_actualizacion",
-            ]
-        )
-
-        MovimientoInventario.objects.create(
-
-            variante=variante_nueva,
-
-            tipo="CAMBIO_PRODUCTO",
-
-            stock_anterior=(
-                stock_nueva_anterior
-            ),
-
-            cantidad=cantidad,
-
-            stock_nuevo=(
-                stock_nueva_nuevo
-            ),
-
-            stock_defectuoso_anterior=(
-                stock_nueva_defectuoso
-            ),
-
-            stock_defectuoso_nuevo=(
-                stock_nueva_defectuoso
-            ),
-
-            observaciones=(
-                f"Cambio de producto por garantía "
-                f"{garantia.id} - "
-                "salida producto nuevo"
-            ),
-
-            usuario=usuario
-
-        )
-
-        garantia.variante_nueva = (
-            variante_nueva
-        )
-
-    # ========================================================
-    # 5. REPARACION
-    # ========================================================
-
+        _aprobar_cambio_producto(garantia, cantidad, data, usuario)
     elif resolucion == "REPARACION":
-
-        # La reparación no modifica stock.
         pass
 
-    # ========================================================
-    # 6. ACTUALIZAR GARANTÍA
-    # ========================================================
-
     garantia.estado = "APROBADA"
-
     garantia.resolucion = resolucion
-
-    garantia.observaciones = observaciones
-
-    garantia.save(
-        update_fields=[
-            "estado",
-            "resolucion",
-            "observaciones",
-            "variante_nueva_id",
-            "fecha_actualizacion",
-        ]
-    )
-
-    # ========================================================
-    # BITÁCORA
-    # ========================================================
+    garantia.observaciones = data.get("observaciones")
+    garantia.save(update_fields=["estado", "resolucion", "observaciones", "variante_nueva_id", "fecha_actualizacion"])
 
     registrar_bitacora(
-
         usuario=usuario,
-
         modulo="Garantias",
-
         accion="APROBAR_GARANTIA",
-
         descripcion=(
-            f"Garantía {garantia.id} aprobada por "
-            f"{usuario.nombre} "
-            f"{usuario.apellido}. "
-            f"Venta: '{garantia.venta.folio}'. "
-            f"Variante: '{garantia.variante.nombre}'. "
-            f"Cantidad: {cantidad}. "
-            f"Resolución: {resolucion}."
-        )
-
+            f"Garantía {garantia.id} aprobada por {usuario.nombre} {usuario.apellido}. "
+            f"Venta: '{garantia.venta.folio}'. Variante: '{garantia.variante.nombre}'. "
+            f"Cantidad: {cantidad}. Resolución: {resolucion}."
+        ),
     )
-
     return garantia
 
 
@@ -745,85 +259,30 @@ def aprobar_garantia(
 # ============================================================
 
 @transaction.atomic
-def rechazar_garantia(
-    garantia_id,
-    data,
-    usuario
-):
-
-    # ========================================================
-    # 1. Buscar y bloquear
-    # ========================================================
-
+def rechazar_garantia(garantia_id, data, usuario):
     try:
-
-        garantia = (
-            Garantia.objects
-            .select_for_update()
-            .get(
-                id=garantia_id
-            )
-        )
-
+        garantia = Garantia.objects.select_for_update().get(id=garantia_id)
     except Garantia.DoesNotExist:
-
-        raise BusinessException(
-            "La garantía no existe."
-        )
-
-    # ========================================================
-    # 2. Validar estado
-    # ========================================================
+        raise BusinessException("La garantía no existe.")
 
     if garantia.estado != "PENDIENTE":
-
-        raise BusinessException(
-            "Solo se pueden rechazar garantías pendientes."
-        )
-
-    # ========================================================
-    # 3. Rechazar
-    # ========================================================
+        raise BusinessException("Solo se pueden rechazar garantías pendientes.")
 
     garantia.estado = "RECHAZADA"
-
-    garantia.observaciones = data.get(
-        "observaciones"
-    )
-
-    garantia.save(
-        update_fields=[
-            "estado",
-            "observaciones",
-            "fecha_actualizacion",
-        ]
-    )
-
-    # ========================================================
-    # BITÁCORA
-    # ========================================================
+    garantia.observaciones = data.get("observaciones")
+    garantia.save(update_fields=["estado", "observaciones", "fecha_actualizacion"])
 
     registrar_bitacora(
-
         usuario=usuario,
-
         modulo="Garantias",
-
         accion="RECHAZAR_GARANTIA",
-
         descripcion=(
-            f"Garantía {garantia.id} rechazada por "
-            f"{usuario.nombre} "
-            f"{usuario.apellido}. "
-            f"Venta: '{garantia.venta.folio}'. "
-            f"Variante: '{garantia.variante.nombre}'. "
+            f"Garantía {garantia.id} rechazada por {usuario.nombre} {usuario.apellido}. "
+            f"Venta: '{garantia.venta.folio}'. Variante: '{garantia.variante.nombre}'. "
             f"Cantidad: {garantia.cantidad}. "
-            f"Observaciones: "
-            f"{garantia.observaciones or 'Sin observaciones'}."
-        )
-
+            f"Observaciones: {garantia.observaciones or 'Sin observaciones'}."
+        ),
     )
-
     return garantia
 
 
@@ -832,85 +291,29 @@ def rechazar_garantia(
 # ============================================================
 
 @transaction.atomic
-def finalizar_garantia(
-    garantia_id,
-    data,
-    usuario
-):
-
-    # ========================================================
-    # 1. Buscar y bloquear
-    # ========================================================
-
+def finalizar_garantia(garantia_id, data, usuario):
     try:
-
-        garantia = (
-            Garantia.objects
-            .select_for_update()
-            .get(
-                id=garantia_id
-            )
-        )
-
+        garantia = Garantia.objects.select_for_update().get(id=garantia_id)
     except Garantia.DoesNotExist:
-
-        raise BusinessException(
-            "La garantía no existe."
-        )
-
-    # ========================================================
-    # 2. Validar estado
-    # ========================================================
+        raise BusinessException("La garantía no existe.")
 
     if garantia.estado != "APROBADA":
-
-        raise BusinessException(
-            "Solo se pueden finalizar garantías aprobadas."
-        )
-
-    # ========================================================
-    # 3. Finalizar
-    # ========================================================
+        raise BusinessException("Solo se pueden finalizar garantías aprobadas.")
 
     garantia.estado = "FINALIZADA"
-
     if data.get("observaciones"):
-
-        garantia.observaciones = data[
-            "observaciones"
-        ]
-
-    garantia.save(
-        update_fields=[
-            "estado",
-            "observaciones",
-            "fecha_actualizacion",
-        ]
-    )
-
-    # ========================================================
-    # BITÁCORA
-    # ========================================================
+        garantia.observaciones = data["observaciones"]
+    garantia.save(update_fields=["estado", "observaciones", "fecha_actualizacion"])
 
     registrar_bitacora(
-
         usuario=usuario,
-
         modulo="Garantias",
-
         accion="FINALIZAR_GARANTIA",
-
         descripcion=(
-            f"Garantía {garantia.id} finalizada por "
-            f"{usuario.nombre} "
-            f"{usuario.apellido}. "
-            f"Venta: '{garantia.venta.folio}'. "
-            f"Variante: '{garantia.variante.nombre}'. "
+            f"Garantía {garantia.id} finalizada por {usuario.nombre} {usuario.apellido}. "
+            f"Venta: '{garantia.venta.folio}'. Variante: '{garantia.variante.nombre}'. "
             f"Cantidad: {garantia.cantidad}. "
-            f"Resolución: "
-            f"{garantia.resolucion or 'No especificada'}."
-        )
-
+            f"Resolución: {garantia.resolucion or 'No especificada'}."
+        ),
     )
-
     return garantia

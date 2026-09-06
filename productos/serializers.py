@@ -30,9 +30,33 @@ class ProductoSerializer(
         read_only_fields = [
             "id",
             "categoria_nombre",
+            "activo",
             "fecha_creacion",
             "fecha_actualizacion",
         ]
+
+    # ==========================================================
+    # VALIDAR ACTIVO (SOLO LECTURA)
+    # ==========================================================
+
+    def validate(
+        self,
+        attrs
+    ):
+
+        if "activo" in self.initial_data:
+
+            raise serializers.ValidationError(
+                {
+                    "activo": (
+                        "El estado activo no puede modificarse "
+                        "directamente. Utiliza los endpoints "
+                        "activar/desactivar."
+                    )
+                }
+            )
+
+        return attrs
 
     # ==========================================================
     # VALIDAR CATEGORIA

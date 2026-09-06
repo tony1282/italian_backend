@@ -35,18 +35,94 @@ class VarianteSerializer(
             "id",
             "stock",
             "stock_defectuoso",
+            "activo",
             "fecha_creacion",
             "fecha_actualizacion",
         ]
 
+        extra_kwargs = {
+            "sku": {
+                "error_messages": {
+                    "unique": "Ya existe una variante con este SKU."
+                }
+            },
+            "codigo_barras": {
+                "error_messages": {
+                    "unique": (
+                        "Ya existe una variante con "
+                        "este código de barras."
+                    )
+                }
+            },
+        }
+
     # ==========================================================
-    # VALIDACIONES
+    # VALIDAR COSTO Y PRECIOS (NO NEGATIVOS)
+    # ==========================================================
+
+    def validate_costo(
+        self,
+        value
+    ):
+
+        if value < 0:
+
+            raise serializers.ValidationError(
+                "El costo no puede ser negativo."
+            )
+
+        return value
+
+    def validate_precio_menudeo(
+        self,
+        value
+    ):
+
+        if value < 0:
+
+            raise serializers.ValidationError(
+                "El precio menudeo no puede ser negativo."
+            )
+
+        return value
+
+    def validate_precio_mayoreo(
+        self,
+        value
+    ):
+
+        if value < 0:
+
+            raise serializers.ValidationError(
+                "El precio mayoreo no puede ser negativo."
+            )
+
+        return value
+
+    # ==========================================================
+    # VALIDACIONES GENERALES
     # ==========================================================
 
     def validate(
         self,
         data
     ):
+
+        # ------------------------------------------------------
+        # ACTIVO ES DE SOLO LECTURA
+        # ------------------------------------------------------
+
+        if "activo" in self.initial_data:
+
+            raise serializers.ValidationError(
+                {
+                    "activo": (
+                        "El estado activo no puede modificarse "
+                        "directamente. Utiliza los endpoints "
+                        "activar/desactivar."
+                    )
+                }
+            )
 
         costo = data.get(
             "costo",
@@ -96,27 +172,50 @@ class VarianteSerializer(
             )
 
         # ======================================================
-        # VALIDAR ACTIVACIÓN
+        # VALIDAR PRODUCTO ACTIVO — CREACIÓN
+        # --------------------------------------------------
+        # 'activo' ya no se puede enviar en el payload, así que
+        # toda variante nueva queda activa por defecto (default
+        # del modelo). Por lo tanto, si el producto está
+        # inactivo, no se puede crear la variante.
         # ======================================================
 
-        if (
-            self.instance
-            and self.instance.activo is False
-            and data.get("activo") is True
-        ):
+        if self.instance is None:
 
-            producto = data.get(
-                "producto",
-                self.instance.producto
-            )
+            producto = data.get("producto")
 
-            if not producto.activo:
+            if producto is not None and not producto.activo:
 
                 raise serializers.ValidationError(
                     {
-                        "activo": (
-                            "No se puede activar la variante "
-                            "porque su producto está inactivo."
+                        "producto": (
+                            "No se puede crear una variante "
+                            "activa porque su producto está "
+                            "inactivo."
+                        )
+                    }
+                )
+
+        # ======================================================
+        # VALIDAR PRODUCTO ACTIVO — CAMBIO DE PRODUCTO
+        # --------------------------------------------------
+        # Si la variante ya está activa y se intenta moverla a
+        # un producto inactivo, se bloquea el cambio.
+        # ======================================================
+
+        else:
+
+            if (
+                self.instance.activo
+                and "producto" in data
+                and not data["producto"].activo
+            ):
+
+                raise serializers.ValidationError(
+                    {
+                        "producto": (
+                            "No se puede asociar una variante "
+                            "activa a un producto inactivo."
                         )
                     }
                 )

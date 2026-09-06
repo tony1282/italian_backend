@@ -9,6 +9,8 @@ from rest_framework.pagination import PageNumberPagination
 from usuarios.permissions import IsAdmin
 from config.exceptions import BusinessException
 
+from bitacora.services import registrar_bitacora
+
 from .models import Garantia
 from .serializers import (
     CrearGarantiaSerializer,
@@ -190,6 +192,23 @@ class GarantiaDetailView(APIView):
             )
 
         # ========================================================
+        # Solo el usuario que creó la garantía puede modificarla
+        # ========================================================
+
+        if request.user.id != garantia.usuario_id:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "No tienes permisos para "
+                        "modificar esta garantía."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ========================================================
         # Solo se permite modificar el motivo
         # ========================================================
 
@@ -264,6 +283,18 @@ class GarantiaDetailView(APIView):
                 "motivo",
                 "fecha_actualizacion"
             ]
+        )
+
+        registrar_bitacora(
+            usuario=request.user,
+            modulo="Garantias",
+            accion="MODIFICAR_GARANTIA",
+            descripcion=(
+                f"Garantía {garantia.id} modificada para la venta "
+                f"'{garantia.venta.folio}' por "
+                f"{request.user.nombre} {request.user.apellido}. "
+                f"Motivo actualizado: {garantia.motivo}."
+            ),
         )
 
         return Response(

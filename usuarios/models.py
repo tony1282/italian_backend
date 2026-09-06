@@ -18,7 +18,8 @@ class UsuarioManager(BaseUserManager):
         nombre="",
         apellido="",
         rol=2,
-        activo=True
+        activo=True,
+        _allow_superadmin=False
     ):
 
         if not usuario:
@@ -29,6 +30,11 @@ class UsuarioManager(BaseUserManager):
         if not email:
             raise ValueError(
                 "El correo es obligatorio"
+            )
+
+        if rol == 0 and not _allow_superadmin:
+            raise ValueError(
+                "El SuperAdmin solo puede crearse mediante create_superuser()."
             )
 
         usuario = usuario.strip().lower()
@@ -70,7 +76,8 @@ class UsuarioManager(BaseUserManager):
             nombre=nombre,
             apellido=apellido,
             rol=0,
-            activo=True
+            activo=True,
+            _allow_superadmin=True
         )
 
 

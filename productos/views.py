@@ -11,6 +11,8 @@ from rest_framework.permissions import (
     IsAuthenticated
 )
 
+from rest_framework.decorators import action
+
 from rest_framework.pagination import PageNumberPagination
 
 from .models import Producto
@@ -32,6 +34,8 @@ class ProductoPagination(PageNumberPagination):
 
     page_size = 50
 
+    page_size_query_param = "page_size"
+
     max_page_size = 200
 
 
@@ -47,6 +51,20 @@ class ProductoViewSet(
 
     pagination_class = ProductoPagination
 
+    # ----------------------------------------------------------
+    # SIN DELETE: el ciclo de vida se maneja con
+    # activar/desactivar, no con el método HTTP DELETE.
+    # ----------------------------------------------------------
+
+    http_method_names = [
+        "get",
+        "post",
+        "put",
+        "patch",
+        "head",
+        "options"
+    ]
+
 
     # ==========================================================
     # QUERYSET
@@ -55,12 +73,14 @@ class ProductoViewSet(
     def get_queryset(self):
 
         # ------------------------------------------------------
-        # PARA MODIFICAR O REACTIVAR
+        # PARA MODIFICAR, REACTIVAR O DESACTIVAR
         # ------------------------------------------------------
 
         if self.action in [
             "update",
-            "partial_update"
+            "partial_update",
+            "activar",
+            "desactivar"
         ]:
 
             return Producto.objects.all()
@@ -71,6 +91,9 @@ class ProductoViewSet(
 
         return Producto.objects.filter(
             activo=True
+        ).order_by(
+            "nombre",
+            "id"
         )
 
 
@@ -194,7 +217,10 @@ class ProductoViewSet(
 
 
     # ==========================================================
-    # MODIFICAR / ACTIVAR / DESACTIVAR PRODUCTO
+    # MODIFICAR PRODUCTO
+    # (el estado 'activo' ya no puede cambiar aquí: lo
+    # bloquea el serializer y se administra en activar/
+    # desactivar)
     # ==========================================================
 
     def perform_update(
@@ -202,67 +228,19 @@ class ProductoViewSet(
         serializer
     ):
 
-        producto_anterior = self.get_object()
-
-        activo_anterior = producto_anterior.activo
-
         with transaction.atomic():
 
             producto = serializer.save()
 
-            # --------------------------------------------------
-            # ACTIVAR
-            # --------------------------------------------------
+            registrar_bitacora(
 
-            if (
-                activo_anterior is False
-                and producto.activo is True
-            ):
+                usuario=self.request.user,
 
-                accion = "ACTIVAR_PRODUCTO"
+                modulo="Productos",
 
-                descripcion = (
+                accion="MODIFICAR_PRODUCTO",
 
-                    f"Producto '{producto.nombre}' "
-
-                    f"activado correctamente por "
-
-                    f"{self.request.user.nombre} "
-
-                    f"{self.request.user.apellido}."
-                )
-
-            # --------------------------------------------------
-            # DESACTIVAR
-            # --------------------------------------------------
-
-            elif (
-                activo_anterior is True
-                and producto.activo is False
-            ):
-
-                accion = "DESACTIVAR_PRODUCTO"
-
-                descripcion = (
-
-                    f"Producto '{producto.nombre}' "
-
-                    f"desactivado correctamente por "
-
-                    f"{self.request.user.nombre} "
-
-                    f"{self.request.user.apellido}."
-                )
-
-            # --------------------------------------------------
-            # MODIFICAR
-            # --------------------------------------------------
-
-            else:
-
-                accion = "MODIFICAR_PRODUCTO"
-
-                descripcion = (
+                descripcion=(
 
                     f"Producto '{producto.nombre}' "
 
@@ -272,32 +250,126 @@ class ProductoViewSet(
 
                     f"{self.request.user.apellido}."
                 )
+            )
+
+
+    # ==========================================================
+    # ACTIVAR PRODUCTO
+    # ==========================================================
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="activar"
+    )
+    def activar(
+        self,
+        request,
+        pk=None
+    ):
+
+        producto = self.get_object()
+
+        if producto.activo:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "El producto ya está activo."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+
+            producto.activo = True
+
+            producto.save(
+                update_fields=[
+                    "activo",
+                    "fecha_actualizacion"
+                ]
+            )
 
             registrar_bitacora(
 
-                usuario=self.request.user,
+                usuario=request.user,
 
                 modulo="Productos",
 
-                accion=accion,
+                accion="ACTIVAR_PRODUCTO",
 
-                descripcion=descripcion
+                descripcion=(
 
+                    f"Producto '{producto.nombre}' "
+
+                    f"activado correctamente por "
+
+                    f"{request.user.nombre} "
+
+                    f"{request.user.apellido}."
+                )
             )
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Producto activado "
+                    "correctamente."
+                ),
+
+                "data": ProductoSerializer(
+                    producto
+                ).data
+            },
+
+            status=status.HTTP_200_OK
+        )
 
 
     # ==========================================================
     # DESACTIVAR PRODUCTO
     # ==========================================================
 
-    def destroy(
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="desactivar"
+    )
+    def desactivar(
         self,
         request,
-        *args,
-        **kwargs
+        pk=None
     ):
 
         producto = self.get_object()
+
+        if not producto.activo:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "El producto ya está inactivo."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # ------------------------------------------------------
         # NO DESACTIVAR SI TIENE VARIANTES ACTIVAS

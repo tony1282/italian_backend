@@ -85,13 +85,23 @@ class CorteCajaSerializer(
 
         return value
 
+    # --------------------------------------------------------
+    # Estados de venta que representan ingreso válido para el
+    # corte: una venta COMPLETADA o DEVUELTA sí generó (o sigue
+    # representando) un cobro real; el reembolso de una
+    # devolución se resta aparte (ver total_reembolsos /
+    # efectivo_esperado_actual), así que no hay doble conteo.
+    # CANCELADA queda excluida explícitamente.
+    # --------------------------------------------------------
+    ESTADOS_VENTA_VALIDA = ["COMPLETADA", "DEVUELTA"]
+
     def get_total_ventas(self, obj):
 
         resultado = (
             Venta.objects
             .filter(
                 corte_caja=obj,
-                estado="COMPLETADA"
+                estado__in=self.ESTADOS_VENTA_VALIDA
             )
             .aggregate(total=Sum("total"))["total"]
         )
@@ -104,7 +114,7 @@ class CorteCajaSerializer(
             Venta.objects
             .filter(
                 corte_caja=obj,
-                estado="COMPLETADA"
+                estado__in=self.ESTADOS_VENTA_VALIDA
             )
             .count()
         )
@@ -128,7 +138,7 @@ class CorteCajaSerializer(
             Venta.objects
             .filter(
                 corte_caja=obj,
-                estado="COMPLETADA",
+                estado__in=self.ESTADOS_VENTA_VALIDA,
                 metodo_pago__nombre="EFECTIVO"
             )
             .aggregate(total=Sum("total"))["total"]

@@ -1,29 +1,18 @@
 import uuid
-
-from datetime import datetime
+from datetime import date
 
 from rest_framework.views import APIView
-
 from rest_framework.response import Response
-
-from rest_framework.permissions import (
-    IsAuthenticated
-)
-
-from rest_framework.pagination import (
-    PageNumberPagination
-)
-
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 
+from django.utils import timezone
+
 from usuarios.permissions import IsAdmin
-
 from ventas.models import Venta
-
 from inventario.models import MovimientoInventario
-
 from garantias.models import Garantia
-
 
 from .services import (
     reporte_resumen_dia,
@@ -36,8 +25,6 @@ from .services import (
     reporte_garantias,
     reporte_movimientos,
 )
-
-
 from .serializers import (
     ReporteResumenDiaSerializer,
     ReporteVentaSerializer,
@@ -55,159 +42,96 @@ from .serializers import (
 # PERMISOS
 # ============================================================
 
-PERMISSION_ADMIN = [
-    IsAuthenticated,
-    IsAdmin,
-]
-
-PERMISSION_EMPLEADO = [
-    IsAuthenticated,
-]
+PERMISSION_ADMIN = [IsAuthenticated, IsAdmin]
+PERMISSION_EMPLEADO = [IsAuthenticated]
 
 
 # ============================================================
 # PAGINACIÓN
 # ============================================================
 
-class ReportePagination(
-    PageNumberPagination
-):
-
+class ReportePagination(PageNumberPagination):
     page_size = 50
-
     max_page_size = 200
 
 
-def _paginar(request, data):
-
-    paginator = ReportePagination()
-
-    pagina = paginator.paginate_queryset(
-        data,
-        request
-    )
-
-    return paginator, pagina
-
-
 # ============================================================
-# VALIDAR FECHA
+# CLASE BASE — encapsula el patrón común de todos los reportes
 # ============================================================
 
-def _parsear_fecha(
-    valor,
-    nombre
-):
+class BaseReporteView(APIView):
 
-    if not valor:
-
-        return None, None
-
-    try:
-
-        from datetime import date
-        fecha = date.fromisoformat(valor)
-
-    except ValueError:
-
-        return (
-            None,
-            Response(
-                {
-                    "success": False,
-                    "message": (
-                        f"{nombre} no es una fecha "
-                        "válida (formato YYYY-MM-DD)."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST
+    def _parsear_fecha(self, valor, nombre):
+        if not valor:
+            return None, None
+        try:
+            return date.fromisoformat(valor), None
+        except ValueError:
+            return None, Response(
+                {"success": False, "message": f"{nombre} no es una fecha válida (formato YYYY-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
+
+    def _validar_rango(self, fecha_inicio, fecha_fin):
+        if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+            return Response(
+                {"success": False, "message": "fecha_inicio no puede ser posterior a fecha_fin."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
+    def _parsear_rango(self, request):
+        """
+        Parsea fecha_inicio y fecha_fin de los query params.
+        Retorna (fecha_inicio, fecha_fin, error_response).
+        Si hay error, error_response no es None.
+        """
+        fecha_inicio, error = self._parsear_fecha(
+            request.query_params.get("fecha_inicio"), "fecha_inicio"
         )
+        if error:
+            return None, None, error
 
-    return fecha, None
-
-
-# ============================================================
-# VALIDAR RANGO
-# ============================================================
-
-def _validar_rango(
-    fecha_inicio,
-    fecha_fin
-):
-
-    if (
-        fecha_inicio
-        and fecha_fin
-        and fecha_inicio > fecha_fin
-    ):
-
-        return Response(
-            {
-                "success": False,
-                "message": (
-                    "fecha_inicio no puede ser "
-                    "posterior a fecha_fin."
-                )
-            },
-            status=status.HTTP_400_BAD_REQUEST
+        fecha_fin, error = self._parsear_fecha(
+            request.query_params.get("fecha_fin"), "fecha_fin"
         )
+        if error:
+            return None, None, error
 
-    return None
+        error = self._validar_rango(fecha_inicio, fecha_fin)
+        if error:
+            return None, None, error
+
+        return fecha_inicio, fecha_fin, None
+
+    def _paginar(self, request, data, serializer_class):
+        paginator = ReportePagination()
+        pagina = paginator.paginate_queryset(data, request)
+        return paginator.get_paginated_response(serializer_class(pagina, many=True).data)
 
 
 # ============================================================
 # RESUMEN DEL DÍA
 # ============================================================
 
-class ReporteResumenDiaView(
-    APIView
-):
+class ReporteResumenDiaView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
+    def get(self, request):
+        fecha_raw = request.query_params.get("fecha")
 
-        fecha = request.query_params.get(
-            "fecha"
-        )
-
-        if not fecha:
-
-            from django.utils import timezone
-
+        if not fecha_raw:
             fecha = timezone.localdate()
-
         else:
-
-            fecha, error = _parsear_fecha(
-                fecha,
-                "fecha"
-            )
-
+            fecha, error = self._parsear_fecha(fecha_raw, "fecha")
             if error:
-
                 return error
 
-        data = reporte_resumen_dia(
-            fecha=fecha
-        )
-
-        serializer = (
-            ReporteResumenDiaSerializer(
-                data
-            )
-        )
-
+        data = reporte_resumen_dia(fecha=fecha)
         return Response(
-            {
-                "success": True,
-                "data": serializer.data
-            },
-            status=status.HTTP_200_OK
+            {"success": True, "data": ReporteResumenDiaSerializer(data).data},
+            status=status.HTTP_200_OK,
         )
 
 
@@ -215,568 +139,160 @@ class ReporteResumenDiaView(
 # REPORTE DE VENTAS
 # ============================================================
 
-class ReporteVentasView(
-    APIView
-):
+class ReporteVentasView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
-
-        fecha_inicio, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_inicio"
-            ),
-            "fecha_inicio"
-        )
-
+    def get(self, request):
+        fecha_inicio, fecha_fin, error = self._parsear_rango(request)
         if error:
             return error
 
-        fecha_fin, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_fin"
-            ),
-            "fecha_fin"
-        )
-
-        if error:
-            return error
-
-        error_rango = _validar_rango(
-            fecha_inicio,
-            fecha_fin
-        )
-
-        if error_rango:
-            return error_rango
-
-        usuario_id = (
-            request.query_params.get(
-                "usuario"
-            )
-        )
-
-        estado = (
-            request.query_params.get(
-                "estado"
-            )
-        )
-
-        # ----------------------------------------------------
-        # VALIDAR UUID USUARIO
-        # ----------------------------------------------------
+        usuario_id = request.query_params.get("usuario")
+        estado = request.query_params.get("estado")
 
         if usuario_id:
-
             try:
-
-                uuid.UUID(
-                    str(usuario_id)
-                )
-
-            except (
-                ValueError,
-                TypeError,
-                AttributeError
-            ):
-
+                uuid.UUID(str(usuario_id))
+            except (ValueError, TypeError, AttributeError):
                 return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            "usuario no es un "
-                            "identificador válido."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
+                    {"success": False, "message": "usuario no es un identificador válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # ----------------------------------------------------
-        # VALIDAR ESTADO DE VENTA
-        # ----------------------------------------------------
+        if estado and estado not in {v for v, _ in Venta.ESTADOS}:
+            return Response(
+                {"success": False, "message": "El estado de venta no es válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if estado:
-
-            estados_validos = {
-                valor
-                for valor, _ in Venta.ESTADOS
-            }
-
-            if estado not in estados_validos:
-
-                return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            "El estado de venta "
-                            "no es válido."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        data = reporte_ventas(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            usuario_id=usuario_id,
-            estado=estado
-        )
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteVentaSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+        data = reporte_ventas(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+                              usuario_id=usuario_id, estado=estado)
+        return self._paginar(request, data, ReporteVentaSerializer)
 
 
 # ============================================================
 # PRODUCTOS MÁS VENDIDOS
 # ============================================================
 
-class ReporteProductosView(
-    APIView
-):
+class ReporteProductosView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
-
-        fecha_inicio, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_inicio"
-            ),
-            "fecha_inicio"
-        )
-
+    def get(self, request):
+        fecha_inicio, fecha_fin, error = self._parsear_rango(request)
         if error:
             return error
 
-        fecha_fin, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_fin"
-            ),
-            "fecha_fin"
-        )
-
-        if error:
-            return error
-
-        error_rango = _validar_rango(
-            fecha_inicio,
-            fecha_fin
-        )
-
-        if error_rango:
-            return error_rango
-
-        data = reporte_productos(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin
-        )
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteProductoSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+        data = reporte_productos(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+        return self._paginar(request, data, ReporteProductoSerializer)
 
 
 # ============================================================
 # INVENTARIO
 # ============================================================
 
-class ReporteInventarioView(
-    APIView
-):
+class ReporteInventarioView(BaseReporteView):
 
     permission_classes = PERMISSION_EMPLEADO
 
-    def get(
-        self,
-        request
-    ):
-
-        data = reporte_inventario()
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteInventarioSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+    def get(self, request):
+        return self._paginar(request, reporte_inventario(), ReporteInventarioSerializer)
 
 
 # ============================================================
 # STOCK BAJO
 # ============================================================
 
-class ReporteStockBajoView(
-    APIView
-):
+class ReporteStockBajoView(BaseReporteView):
 
     permission_classes = PERMISSION_EMPLEADO
 
-    def get(
-        self,
-        request
-    ):
-
-        data = reporte_stock_bajo()
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteStockBajoSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+    def get(self, request):
+        return self._paginar(request, reporte_stock_bajo(), ReporteStockBajoSerializer)
 
 
 # ============================================================
 # CORTES DE CAJA
 # ============================================================
 
-class ReporteCortesView(
-    APIView
-):
+class ReporteCortesView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
-
-        fecha_inicio, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_inicio"
-            ),
-            "fecha_inicio"
-        )
-
+    def get(self, request):
+        fecha_inicio, fecha_fin, error = self._parsear_rango(request)
         if error:
             return error
 
-        fecha_fin, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_fin"
-            ),
-            "fecha_fin"
-        )
-
-        if error:
-            return error
-
-        error_rango = _validar_rango(
-            fecha_inicio,
-            fecha_fin
-        )
-
-        if error_rango:
-            return error_rango
-
-        data = reporte_cortes(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin
-        )
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteCorteSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+        data = reporte_cortes(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+        return self._paginar(request, data, ReporteCorteSerializer)
 
 
 # ============================================================
 # DEVOLUCIONES
 # ============================================================
 
-class ReporteDevolucionesView(
-    APIView
-):
+class ReporteDevolucionesView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
-
-        fecha_inicio, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_inicio"
-            ),
-            "fecha_inicio"
-        )
-
+    def get(self, request):
+        fecha_inicio, fecha_fin, error = self._parsear_rango(request)
         if error:
             return error
 
-        fecha_fin, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_fin"
-            ),
-            "fecha_fin"
-        )
-
-        if error:
-            return error
-
-        error_rango = _validar_rango(
-            fecha_inicio,
-            fecha_fin
-        )
-
-        if error_rango:
-            return error_rango
-
-        data = reporte_devoluciones(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin
-        )
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteDevolucionSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+        data = reporte_devoluciones(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
+        return self._paginar(request, data, ReporteDevolucionSerializer)
 
 
 # ============================================================
 # GARANTÍAS
 # ============================================================
 
-class ReporteGarantiasView(
-    APIView
-):
+class ReporteGarantiasView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
-
-        fecha_inicio, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_inicio"
-            ),
-            "fecha_inicio"
-        )
-
+    def get(self, request):
+        fecha_inicio, fecha_fin, error = self._parsear_rango(request)
         if error:
             return error
 
-        fecha_fin, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_fin"
-            ),
-            "fecha_fin"
-        )
-
-        if error:
-            return error
-
-        error_rango = _validar_rango(
-            fecha_inicio,
-            fecha_fin
-        )
-
-        if error_rango:
-            return error_rango
-
-        estado = request.query_params.get(
-            "estado"
-        )
-
-        # ----------------------------------------------------
-        # VALIDAR ESTADO DE GARANTÍA
-        # ----------------------------------------------------
+        estado = request.query_params.get("estado")
 
         if estado:
-
-            campo_estado = Garantia._meta.get_field(
-                "estado"
-            )
-
-            estados_validos = {
-                valor
-                for valor, _ in campo_estado.choices
-            }
-
+            estados_validos = {v for v, _ in Garantia._meta.get_field("estado").choices}
             if estado not in estados_validos:
-
                 return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            "El estado de garantía "
-                            "no es válido."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
+                    {"success": False, "message": "El estado de garantía no es válido."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        data = reporte_garantias(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            estado=estado
-        )
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteGarantiaSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+        data = reporte_garantias(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, estado=estado)
+        return self._paginar(request, data, ReporteGarantiaSerializer)
 
 
 # ============================================================
 # MOVIMIENTOS DE INVENTARIO
 # ============================================================
 
-class ReporteMovimientosView(
-    APIView
-):
+class ReporteMovimientosView(BaseReporteView):
 
     permission_classes = PERMISSION_ADMIN
 
-    def get(
-        self,
-        request
-    ):
-
-        fecha_inicio, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_inicio"
-            ),
-            "fecha_inicio"
-        )
-
+    def get(self, request):
+        fecha_inicio, fecha_fin, error = self._parsear_rango(request)
         if error:
             return error
 
-        fecha_fin, error = _parsear_fecha(
-            request.query_params.get(
-                "fecha_fin"
-            ),
-            "fecha_fin"
-        )
+        tipo = request.query_params.get("tipo")
 
-        if error:
-            return error
+        if tipo and tipo not in {v for v, _ in MovimientoInventario.TIPOS}:
+            return Response(
+                {"success": False, "message": "El tipo de movimiento no es válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        error_rango = _validar_rango(
-            fecha_inicio,
-            fecha_fin
-        )
-
-        if error_rango:
-            return error_rango
-
-        tipo = request.query_params.get(
-            "tipo"
-        )
-
-        # ----------------------------------------------------
-        # VALIDAR TIPO DE MOVIMIENTO
-        # ----------------------------------------------------
-
-        if tipo:
-
-            tipos_validos = {
-                valor
-                for valor, _ in MovimientoInventario.TIPOS
-            }
-
-            if tipo not in tipos_validos:
-
-                return Response(
-                    {
-                        "success": False,
-                        "message": (
-                            "El tipo de movimiento "
-                            "no es válido."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-        data = reporte_movimientos(
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            tipo=tipo
-        )
-
-        paginator, pagina = _paginar(
-            request,
-            data
-        )
-
-        serializer = ReporteMovimientoSerializer(
-            pagina,
-            many=True
-        )
-
-        return paginator.get_paginated_response(
-            serializer.data
-        )
+        data = reporte_movimientos(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, tipo=tipo)
+        return self._paginar(request, data, ReporteMovimientoSerializer)

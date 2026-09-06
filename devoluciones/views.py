@@ -10,6 +10,8 @@ from rest_framework.permissions import IsAuthenticated
 from config.pagination import StandardPagination
 from config.exceptions import BusinessException
 
+from bitacora.services import registrar_bitacora
+
 from .permissions import EsAdministrador
 
 from .serializers import (
@@ -209,6 +211,27 @@ class DevolucionDetailView(APIView):
                 )
 
 
+            # ====================================================
+            # SOLO EL CREADOR O UN ADMINISTRADOR PUEDEN MODIFICAR
+            # ====================================================
+
+            if (
+                request.user.rol not in (0, 1)
+                and request.user.id != devolucion.usuario_id
+            ):
+
+                return Response(
+                    {
+                        "success": False,
+                        "message": (
+                            "No tienes permisos para "
+                            "modificar esta devolución."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+
             # Por seguridad no permitimos modificar
             # venta, detalles ni total directamente.
 
@@ -294,6 +317,18 @@ class DevolucionDetailView(APIView):
 
 
             devolucion.save()
+
+            registrar_bitacora(
+                usuario=request.user,
+                modulo="Devoluciones",
+                accion="MODIFICAR_DEVOLUCION",
+                descripcion=(
+                    f"Devolución {devolucion.id} modificada para la venta "
+                    f"'{devolucion.venta.folio}' por "
+                    f"{request.user.nombre} {request.user.apellido}. "
+                    f"Motivo: {devolucion.motivo}."
+                ),
+            )
 
 
             serializer = DevolucionSerializer(

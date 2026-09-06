@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import transaction, IntegrityError
 
 from rest_framework import (
     viewsets,
@@ -11,14 +11,25 @@ from rest_framework.permissions import (
     IsAuthenticated
 )
 
+from rest_framework.decorators import action
+
+from rest_framework.pagination import PageNumberPagination
+
 from .models import Variante
 from .serializers import VarianteSerializer
-
-from rest_framework.decorators import action
 
 from usuarios.permissions import IsAdmin
 
 from bitacora.services import registrar_bitacora
+
+
+class VariantePagination(PageNumberPagination):
+
+    page_size = 50
+
+    page_size_query_param = "page_size"
+
+    max_page_size = 200
 
 
 class VarianteViewSet(
@@ -31,6 +42,22 @@ class VarianteViewSet(
 
     serializer_class = VarianteSerializer
 
+    pagination_class = VariantePagination
+
+    # ----------------------------------------------------------
+    # SIN DELETE: el ciclo de vida se maneja con
+    # activar/desactivar, no con el método HTTP DELETE.
+    # ----------------------------------------------------------
+
+    http_method_names = [
+        "get",
+        "post",
+        "put",
+        "patch",
+        "head",
+        "options"
+    ]
+
 
     # ==========================================================
     # QUERYSET
@@ -39,12 +66,14 @@ class VarianteViewSet(
     def get_queryset(self):
 
         # ------------------------------------------------------
-        # PARA MODIFICAR O REACTIVAR
+        # PARA MODIFICAR, REACTIVAR O DESACTIVAR
         # ------------------------------------------------------
 
         if self.action in [
             "update",
-            "partial_update"
+            "partial_update",
+            "activar",
+            "desactivar"
         ]:
 
             return Variante.objects.all()
@@ -53,8 +82,30 @@ class VarianteViewSet(
         # CONSULTAS NORMALES
         # ------------------------------------------------------
 
-        return Variante.objects.filter(
+        queryset = Variante.objects.filter(
             activo=True
+        )
+
+        # ------------------------------------------------------
+        # FILTRO OPCIONAL ?producto=<UUID>
+        # (solo aplica al listado)
+        # ------------------------------------------------------
+
+        if self.action == "list":
+
+            producto_id = self.request.query_params.get(
+                "producto"
+            )
+
+            if producto_id:
+
+                queryset = queryset.filter(
+                    producto_id=producto_id
+                )
+
+        return queryset.order_by(
+            "nombre",
+            "id"
         )
 
 
@@ -84,37 +135,107 @@ class VarianteViewSet(
     # CREAR VARIANTE
     # ==========================================================
 
-    def perform_create(
+    def create(
         self,
-        serializer
+        request,
+        *args,
+        **kwargs
     ):
 
-        with transaction.atomic():
+        serializer = self.get_serializer(
+            data=request.data
+        )
 
-            variante = serializer.save()
+        if not serializer.is_valid():
 
-            registrar_bitacora(
+            return Response(
 
-                usuario=self.request.user,
+                {
+                    "success": False,
 
-                modulo="Variantes",
+                    "message": (
+                        "No se pudo registrar "
+                        "la variante."
+                    ),
 
-                accion="CREAR_VARIANTE",
+                    "data": serializer.errors
+                },
 
-                descripcion=(
-                    f"Variante '{variante.nombre}' "
-                    f"del producto "
-                    f"'{variante.producto.nombre}' "
-                    f"creada correctamente por "
-                    f"{self.request.user.nombre} "
-                    f"{self.request.user.apellido}."
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+
+            with transaction.atomic():
+
+                variante = serializer.save()
+
+                registrar_bitacora(
+
+                    usuario=request.user,
+
+                    modulo="Variantes",
+
+                    accion="CREAR_VARIANTE",
+
+                    descripcion=(
+
+                        f"Variante '{variante.nombre}' "
+
+                        f"del producto "
+
+                        f"'{variante.producto.nombre}' "
+
+                        f"creada correctamente por "
+
+                        f"{request.user.nombre} "
+
+                        f"{request.user.apellido}."
+                    )
                 )
 
+        except IntegrityError:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "Ya existe una variante con "
+                        "este SKU o código de barras."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
             )
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Variante registrada "
+                    "correctamente."
+                ),
+
+                "data": VarianteSerializer(
+                    variante
+                ).data
+            },
+
+            status=status.HTTP_201_CREATED
+        )
 
 
     # ==========================================================
-    # MODIFICAR / ACTIVAR / DESACTIVAR VARIANTE
+    # MODIFICAR VARIANTE
+    # (el estado 'activo' ya no puede cambiar aquí: lo
+    # bloquea el serializer y se administra en activar/
+    # desactivar)
     # ==========================================================
 
     def perform_update(
@@ -122,70 +243,9 @@ class VarianteViewSet(
         serializer
     ):
 
-        variante_anterior = self.get_object()
-
-        activo_anterior = variante_anterior.activo
-
         with transaction.atomic():
 
             variante = serializer.save()
-
-            # --------------------------------------------------
-            # ACTIVAR
-            # --------------------------------------------------
-
-            if (
-                activo_anterior is False
-                and variante.activo is True
-            ):
-
-                accion = "ACTIVAR_VARIANTE"
-
-                descripcion = (
-                    f"Variante '{variante.nombre}' "
-                    f"del producto "
-                    f"'{variante.producto.nombre}' "
-                    f"activada correctamente por "
-                    f"{self.request.user.nombre} "
-                    f"{self.request.user.apellido}."
-                )
-
-            # --------------------------------------------------
-            # DESACTIVAR
-            # --------------------------------------------------
-
-            elif (
-                activo_anterior is True
-                and variante.activo is False
-            ):
-
-                accion = "DESACTIVAR_VARIANTE"
-
-                descripcion = (
-                    f"Variante '{variante.nombre}' "
-                    f"del producto "
-                    f"'{variante.producto.nombre}' "
-                    f"desactivada correctamente por "
-                    f"{self.request.user.nombre} "
-                    f"{self.request.user.apellido}."
-                )
-
-            # --------------------------------------------------
-            # MODIFICAR
-            # --------------------------------------------------
-
-            else:
-
-                accion = "MODIFICAR_VARIANTE"
-
-                descripcion = (
-                    f"Variante '{variante.nombre}' "
-                    f"del producto "
-                    f"'{variante.producto.nombre}' "
-                    f"modificada correctamente por "
-                    f"{self.request.user.nombre} "
-                    f"{self.request.user.apellido}."
-                )
 
             registrar_bitacora(
 
@@ -193,25 +253,164 @@ class VarianteViewSet(
 
                 modulo="Variantes",
 
-                accion=accion,
+                accion="MODIFICAR_VARIANTE",
 
-                descripcion=descripcion
+                descripcion=(
 
+                    f"Variante '{variante.nombre}' "
+
+                    f"del producto "
+
+                    f"'{variante.producto.nombre}' "
+
+                    f"modificada correctamente por "
+
+                    f"{self.request.user.nombre} "
+
+                    f"{self.request.user.apellido}."
+                )
             )
+
+
+    # ==========================================================
+    # ACTIVAR VARIANTE
+    # ==========================================================
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="activar"
+    )
+    def activar(
+        self,
+        request,
+        pk=None
+    ):
+
+        variante = self.get_object()
+
+        if variante.activo:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "La variante ya está activa."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not variante.producto.activo:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "No se puede activar la variante "
+                        "porque su producto está inactivo."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+
+            variante.activo = True
+
+            variante.save(
+                update_fields=[
+                    "activo",
+                    "fecha_actualizacion"
+                ]
+            )
+
+            registrar_bitacora(
+
+                usuario=request.user,
+
+                modulo="Variantes",
+
+                accion="ACTIVAR_VARIANTE",
+
+                descripcion=(
+
+                    f"Variante '{variante.nombre}' "
+
+                    f"del producto "
+
+                    f"'{variante.producto.nombre}' "
+
+                    f"activada correctamente por "
+
+                    f"{request.user.nombre} "
+
+                    f"{request.user.apellido}."
+                )
+            )
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Variante activada "
+                    "correctamente."
+                ),
+
+                "data": VarianteSerializer(
+                    variante
+                ).data
+            },
+
+            status=status.HTTP_200_OK
+        )
 
 
     # ==========================================================
     # DESACTIVAR VARIANTE
     # ==========================================================
 
-    def destroy(
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="desactivar"
+    )
+    def desactivar(
         self,
         request,
-        *args,
-        **kwargs
+        pk=None
     ):
 
         variante = self.get_object()
+
+        if not variante.activo:
+
+            return Response(
+
+                {
+                    "success": False,
+
+                    "message": (
+                        "La variante ya está inactiva."
+                    ),
+
+                    "data": None
+                },
+
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         with transaction.atomic():
 
@@ -233,14 +432,19 @@ class VarianteViewSet(
                 accion="DESACTIVAR_VARIANTE",
 
                 descripcion=(
+
                     f"Variante '{variante.nombre}' "
+
                     f"del producto "
+
                     f"'{variante.producto.nombre}' "
+
                     f"desactivada correctamente por "
+
                     f"{request.user.nombre} "
+
                     f"{request.user.apellido}."
                 )
-
             )
 
         return Response(
