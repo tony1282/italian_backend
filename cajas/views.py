@@ -2,12 +2,14 @@ from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from usuarios.permissions import IsAdmin
 
 from .models import Caja
 from .serializers import CajaSerializer
+
+from bitacora.services import registrar_bitacora
 
 
 class CajaViewSet(
@@ -94,7 +96,19 @@ class CajaViewSet(
 
         try:
 
-            caja = serializer.save()
+            with transaction.atomic():
+
+                caja = serializer.save()
+
+                registrar_bitacora(
+                    usuario=request.user,
+                    modulo="Caja",
+                    accion="CREAR_CAJA",
+                    descripcion=(
+                        f"Caja '{caja.nombre}' creada correctamente por "
+                        f"{request.user.nombre} {request.user.apellido}."
+                    )
+                )
 
         except IntegrityError:
 
@@ -144,7 +158,19 @@ class CajaViewSet(
 
         try:
 
-            caja = serializer.save()
+            with transaction.atomic():
+
+                caja = serializer.save()
+
+                registrar_bitacora(
+                    usuario=request.user,
+                    modulo="Caja",
+                    accion="ACTUALIZAR_CAJA",
+                    descripcion=(
+                        f"Caja '{caja.nombre}' actualizada correctamente por "
+                        f"{request.user.nombre} {request.user.apellido}."
+                    )
+                )
 
         except IntegrityError:
 
@@ -209,14 +235,26 @@ class CajaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        caja.activa = True
+        with transaction.atomic():
 
-        caja.save(
-            update_fields=[
-                "activa",
-                "fecha_actualizacion"
-            ]
-        )
+            caja.activa = True
+
+            caja.save(
+                update_fields=[
+                    "activa",
+                    "fecha_actualizacion"
+                ]
+            )
+
+            registrar_bitacora(
+                usuario=request.user,
+                modulo="Caja",
+                accion="ACTIVAR_CAJA",
+                descripcion=(
+                    f"Caja '{caja.nombre}' activada correctamente por "
+                    f"{request.user.nombre} {request.user.apellido}."
+                )
+            )
 
         return Response(
             {
@@ -257,14 +295,26 @@ class CajaViewSet(
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        caja.activa = False
+        with transaction.atomic():
 
-        caja.save(
-            update_fields=[
-                "activa",
-                "fecha_actualizacion"
-            ]
-        )
+            caja.activa = False
+
+            caja.save(
+                update_fields=[
+                    "activa",
+                    "fecha_actualizacion"
+                ]
+            )
+
+            registrar_bitacora(
+                usuario=request.user,
+                modulo="Caja",
+                accion="DESACTIVAR_CAJA",
+                descripcion=(
+                    f"Caja '{caja.nombre}' desactivada correctamente por "
+                    f"{request.user.nombre} {request.user.apellido}."
+                )
+            )
 
         return Response(
             {

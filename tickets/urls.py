@@ -6,7 +6,7 @@ from .views import TicketVentaView
 urlpatterns = [
 
     path(
-        "ventas/<uuid:id>/ticket/",
+        "ventas/<str:id>/ticket/",
         TicketVentaView.as_view()
     ),
 

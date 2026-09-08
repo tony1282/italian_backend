@@ -7,6 +7,7 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 
 from .models import Venta
 from .serializers import VentaSerializer
@@ -19,6 +20,12 @@ from garantias.models import Garantia
 from config.exceptions import BusinessException
 
 logger = logging.getLogger(__name__)
+
+
+class VentaPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
 
 
 def _usuario_activo(user):
@@ -111,6 +118,7 @@ class VentaViewSet(viewsets.ModelViewSet):
     queryset = Venta.objects.all()
     serializer_class = VentaSerializer
     http_method_names = ["get", "post", "head", "options"]
+    pagination_class = VentaPagination
 
     def get_permissions(self):
         return [IsAuthenticated()]
@@ -150,9 +158,19 @@ class VentaViewSet(viewsets.ModelViewSet):
             .select_related("usuario", "metodo_pago", "corte_caja", "corte_caja__caja")
             .all()
         )
-        return Response(
-            {"success": True, "data": [_serializar_venta(v) for v in ventas]},
-            status=status.HTTP_200_OK,
+
+        paginator = VentaPagination()
+
+        pagina = paginator.paginate_queryset(
+            ventas,
+            request,
+        )
+
+        return paginator.get_paginated_response(
+            {
+                "success": True,
+                "data": [_serializar_venta(v) for v in pagina],
+            }
         )
 
     # ==========================================================

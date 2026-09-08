@@ -1,7 +1,5 @@
 from django.contrib import admin
 from django.urls import path, include
-from usuarios.views import RefreshView
-
 from usuarios.views import (
     LoginView,
     LogoutView,

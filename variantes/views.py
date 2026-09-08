@@ -1,4 +1,5 @@
 from django.db import transaction, IntegrityError
+from django.db.models import F
 
 from rest_framework import (
     viewsets,
@@ -65,8 +66,18 @@ class VarianteViewSet(
 
     def get_queryset(self):
 
+        user = self.request.user
+
+        es_admin = (
+            user
+            and user.is_authenticated
+            and user.rol in (0, 1)
+        )
+
         # ------------------------------------------------------
-        # PARA MODIFICAR, REACTIVAR O DESACTIVAR
+        # PARA MODIFICAR, ACTIVAR O DESACTIVAR
+        # (necesita poder encontrar variantes inactivas para
+        # reactivarlas)
         # ------------------------------------------------------
 
         if self.action in [
@@ -79,17 +90,69 @@ class VarianteViewSet(
             return Variante.objects.all()
 
         # ------------------------------------------------------
+        # CONSULTAR DETALLE — ADMIN/SUPERADMIN
+        # ------------------------------------------------------
+        # Un admin debe poder abrir el detalle de una variante
+        # inactiva (GET /variantes/{id}/), no solo activarla/
+        # desactivarla a ciegas.
+        # ------------------------------------------------------
+
+        if self.action == "retrieve" and es_admin:
+
+            return Variante.objects.all()
+
+        # ------------------------------------------------------
+        # LISTADO — ADMIN/SUPERADMIN
+        # ------------------------------------------------------
+        # Por defecto sigue mostrando solo activas, pero un
+        # admin puede pedir explícitamente las inactivas o
+        # todas con ?activo=.
+        # ------------------------------------------------------
+
+        if self.action == "list" and es_admin:
+
+            activo_param = self.request.query_params.get(
+                "activo"
+            )
+
+            if activo_param is not None:
+
+                if activo_param.lower() == "todos":
+
+                    queryset = Variante.objects.all()
+
+                else:
+
+                    queryset = Variante.objects.filter(
+                        activo=activo_param.lower() in (
+                            "true",
+                            "1"
+                        )
+                    )
+
+                producto_id = self.request.query_params.get(
+                    "producto"
+                )
+
+                if producto_id:
+
+                    queryset = queryset.filter(
+                        producto_id=producto_id
+                    )
+
+                return queryset.order_by(
+                    "nombre",
+                    "id"
+                )
+
+        # ------------------------------------------------------
         # CONSULTAS NORMALES
+        # (empleados, o admin sin filtro)
         # ------------------------------------------------------
 
         queryset = Variante.objects.filter(
             activo=True
         )
-
-        # ------------------------------------------------------
-        # FILTRO OPCIONAL ?producto=<UUID>
-        # (solo aplica al listado)
-        # ------------------------------------------------------
 
         if self.action == "list":
 
@@ -115,15 +178,31 @@ class VarianteViewSet(
 
     def get_permissions(self):
 
+        # ------------------------------------------------------
+        # CONSULTAS
+        # Todos los usuarios autenticados pueden consultar:
+        # - listado
+        # - detalle
+        # - búsqueda por código
+        # - alertas de stock
+        # ------------------------------------------------------
+
         if self.action in [
             "list",
             "retrieve",
-            "buscar_por_codigo"
+            "buscar_por_codigo",
+            "alertas_stock"
         ]:
 
             return [
                 IsAuthenticated()
             ]
+
+        # ------------------------------------------------------
+        # OPERACIONES ADMINISTRATIVAS
+        # Crear, modificar, activar y desactivar variantes
+        # requieren administrador.
+        # ------------------------------------------------------
 
         return [
             IsAuthenticated(),
@@ -181,15 +260,10 @@ class VarianteViewSet(
                     descripcion=(
 
                         f"Variante '{variante.nombre}' "
-
                         f"del producto "
-
                         f"'{variante.producto.nombre}' "
-
                         f"creada correctamente por "
-
                         f"{request.user.nombre} "
-
                         f"{request.user.apellido}."
                     )
                 )
@@ -233,9 +307,9 @@ class VarianteViewSet(
 
     # ==========================================================
     # MODIFICAR VARIANTE
-    # (el estado 'activo' ya no puede cambiar aquí: lo
-    # bloquea el serializer y se administra en activar/
-    # desactivar)
+    # ==========================================================
+    # El estado 'activo' no puede cambiar aquí.
+    # Se administra mediante activar/desactivar.
     # ==========================================================
 
     def perform_update(
@@ -258,18 +332,104 @@ class VarianteViewSet(
                 descripcion=(
 
                     f"Variante '{variante.nombre}' "
-
                     f"del producto "
-
                     f"'{variante.producto.nombre}' "
-
                     f"modificada correctamente por "
-
                     f"{self.request.user.nombre} "
-
                     f"{self.request.user.apellido}."
                 )
             )
+
+
+    # ==========================================================
+    # ALERTAS DE STOCK
+    # ==========================================================
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="alertas-stock"
+    )
+    def alertas_stock(
+        self,
+        request
+    ):
+
+        variantes = (
+            Variante.objects
+            .filter(
+                activo=True,
+                stock__lte=F("stock_minimo")
+            )
+            .select_related("producto")
+            .order_by(
+                "stock",
+                "producto__nombre",
+                "nombre"
+            )
+        )
+
+        data = []
+
+        for variante in variantes:
+
+            if variante.stock == 0:
+
+                estado = "AGOTADO"
+
+            else:
+
+                estado = "BAJO"
+
+            data.append({
+
+                "id": str(variante.id),
+
+                "producto": (
+                    variante.producto.nombre
+                ),
+
+                "variante": (
+                    variante.nombre
+                ),
+
+                "codigo_barras": (
+                    variante.codigo_barras
+                ),
+
+                "sku": (
+                    variante.sku
+                ),
+
+                "stock": (
+                    variante.stock
+                ),
+
+                "stock_minimo": (
+                    variante.stock_minimo
+                ),
+
+                "estado": estado,
+
+            })
+
+        return Response(
+
+            {
+                "success": True,
+
+                "message": (
+                    "Alertas de stock obtenidas "
+                    "correctamente."
+                ),
+
+                "data": data,
+
+                "total": len(data),
+            },
+
+            status=status.HTTP_200_OK
+        )
 
 
     # ==========================================================
@@ -346,15 +506,10 @@ class VarianteViewSet(
                 descripcion=(
 
                     f"Variante '{variante.nombre}' "
-
                     f"del producto "
-
                     f"'{variante.producto.nombre}' "
-
                     f"activada correctamente por "
-
                     f"{request.user.nombre} "
-
                     f"{request.user.apellido}."
                 )
             )
@@ -434,15 +589,10 @@ class VarianteViewSet(
                 descripcion=(
 
                     f"Variante '{variante.nombre}' "
-
                     f"del producto "
-
                     f"'{variante.producto.nombre}' "
-
                     f"desactivada correctamente por "
-
                     f"{request.user.nombre} "
-
                     f"{request.user.apellido}."
                 )
             )

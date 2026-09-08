@@ -87,6 +87,9 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
+    
+    
+    "EXCEPTION_HANDLER": "config.exceptions.custom_exception_handler",
 
     # --------------------------------------------------------
     # Autenticación

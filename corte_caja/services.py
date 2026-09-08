@@ -132,7 +132,7 @@ def abrir_caja(caja_id, efectivo_inicial_raw, usuario):
         descripcion=(
             f"Caja '{caja.nombre}' abierta correctamente por "
             f"{usuario.nombre} {usuario.apellido}. "
-            f"Efectivo inicial: ${efectivo_inicial}"
+            f"Efectivo inicial: ${efectivo_inicial:.2f}"
         ),
     )
 
@@ -296,9 +296,9 @@ def cerrar_caja(
         descripcion=(
             f"Caja '{corte.caja.nombre}' cerrada correctamente por "
             f"{usuario.nombre} {usuario.apellido}. "
-            f"Efectivo esperado: ${efectivo_esperado}. "
-            f"Efectivo contado: ${efectivo_final}. "
-            f"Diferencia: ${diferencia}"
+            f"Efectivo esperado: ${efectivo_esperado:.2f}. "
+            f"Efectivo contado: ${efectivo_final:.2f}. "
+            f"Diferencia: ${diferencia:.2f}"
         ),
     )
 

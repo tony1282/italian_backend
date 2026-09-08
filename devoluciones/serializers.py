@@ -23,8 +23,6 @@ class CrearDevolucionSerializer(
 
     venta_id = serializers.UUIDField()
 
-    metodo_pago_reembolso_id = serializers.UUIDField()
-
     tipo = serializers.ChoiceField(
         choices=[
             "NORMAL",

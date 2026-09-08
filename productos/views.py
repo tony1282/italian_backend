@@ -72,8 +72,18 @@ class ProductoViewSet(
 
     def get_queryset(self):
 
+        user = self.request.user
+
+        es_admin = (
+            user
+            and user.is_authenticated
+            and user.rol in (0, 1)
+        )
+
         # ------------------------------------------------------
-        # PARA MODIFICAR, REACTIVAR O DESACTIVAR
+        # PARA MODIFICAR, ACTIVAR O DESACTIVAR
+        # (necesita poder encontrar productos inactivos para
+        # reactivarlos)
         # ------------------------------------------------------
 
         if self.action in [
@@ -86,7 +96,49 @@ class ProductoViewSet(
             return Producto.objects.all()
 
         # ------------------------------------------------------
-        # CONSULTAS NORMALES
+        # CONSULTAR DETALLE — ADMIN/SUPERADMIN
+        # --------------------------------------------------
+        # Un admin debe poder abrir el detalle de un producto
+        # inactivo (GET /productos/{id}/), no solo activarlo/
+        # desactivarlo a ciegas.
+        # ------------------------------------------------------
+
+        if self.action == "retrieve" and es_admin:
+
+            return Producto.objects.all()
+
+        # ------------------------------------------------------
+        # LISTADO — ADMIN/SUPERADMIN
+        # --------------------------------------------------
+        # Por defecto sigue mostrando solo activos (mismo
+        # comportamiento de siempre), pero un admin puede pedir
+        # explícitamente los inactivos o todos con ?activo=.
+        # ------------------------------------------------------
+
+        if self.action == "list" and es_admin:
+
+            activo_param = self.request.query_params.get(
+                "activo"
+            )
+
+            if activo_param is not None:
+
+                if activo_param.lower() == "todos":
+
+                    return Producto.objects.all().order_by(
+                        "nombre",
+                        "id"
+                    )
+
+                return Producto.objects.filter(
+                    activo=activo_param.lower() in ("true", "1")
+                ).order_by(
+                    "nombre",
+                    "id"
+                )
+
+        # ------------------------------------------------------
+        # CONSULTAS NORMALES (empleados, o admin sin filtro)
         # ------------------------------------------------------
 
         return Producto.objects.filter(

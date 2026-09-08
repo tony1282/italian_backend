@@ -46,8 +46,26 @@ def validar_item_producto(item):
     if not variante_id:
         raise BusinessException("Cada producto debe indicar su variante.")
 
+    cantidad_raw = item.get("cantidad")
+
+    # --------------------------------------------------------
+    # Rechazar booleanos explícitamente. bool es subclase de
+    # int en Python, así que int(True) == 1 e int(False) == 0
+    # se colarían como cantidades válidas si no se valida antes
+    # (mismo criterio ya aplicado en inventario/services.py).
+    # --------------------------------------------------------
+    if isinstance(cantidad_raw, bool):
+        raise BusinessException("La cantidad debe ser un número entero.")
+
+    # --------------------------------------------------------
+    # Rechazar floats no enteros (1.5, -1.5, etc). int(1.5) los
+    # truncaría a 1 sin lanzar ningún error.
+    # --------------------------------------------------------
+    if isinstance(cantidad_raw, float) and not cantidad_raw.is_integer():
+        raise BusinessException("La cantidad debe ser un número entero.")
+
     try:
-        cantidad = int(item.get("cantidad"))
+        cantidad = int(cantidad_raw)
     except (TypeError, ValueError):
         raise BusinessException("La cantidad debe ser un número entero.")
 
@@ -267,7 +285,7 @@ def crear_venta(data, usuario):
         accion="REGISTRAR_VENTA",
         descripcion=(
             f"Venta folio {venta.folio} registrada correctamente por "
-            f"{usuario.nombre} {usuario.apellido}. Total: ${venta.total}"
+            f"{usuario.nombre} {usuario.apellido}. Total: ${venta.total:.2f}"
         ),
     )
 

@@ -21,22 +21,22 @@ class ReporteVentaSerializer(
 
     subtotal = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     descuento = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     iva = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     total = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     estado = serializers.CharField()
@@ -54,15 +54,11 @@ class ReporteProductoSerializer(
 
     variante = serializers.CharField()
 
-    cantidad_vendida = (
-        serializers.IntegerField()
-    )
+    cantidad_vendida = serializers.IntegerField()
 
-    total_generado = (
-        serializers.DecimalField(
-            max_digits=10,
-            decimal_places=2
-        )
+    total_generado = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
     )
 
 
@@ -86,21 +82,23 @@ class ReporteInventarioSerializer(
 
     stock_actual = serializers.IntegerField()
 
+    stock_defectuoso = serializers.IntegerField()
+
     stock_minimo = serializers.IntegerField()
 
     costo = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     precio_menudeo = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     precio_mayoreo = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
     activo = serializers.BooleanField()
@@ -122,11 +120,11 @@ class ReporteStockBajoSerializer(
 
     stock_actual = serializers.IntegerField()
 
+    stock_defectuoso = serializers.IntegerField()
+
     stock_minimo = serializers.IntegerField()
 
-    necesita_reposicion = (
-        serializers.BooleanField()
-    )
+    necesita_reposicion = serializers.BooleanField()
 
 
 # ============================================================
@@ -143,35 +141,27 @@ class ReporteCorteSerializer(
 
     usuario = serializers.CharField()
 
-    fecha_inicio = (
-        serializers.DateTimeField()
-    )
+    fecha_inicio = serializers.DateTimeField()
 
     fecha_fin = serializers.DateTimeField(
-        allow_null=True
+        allow_null=True,
     )
 
-    efectivo_inicial = (
-        serializers.DecimalField(
-            max_digits=10,
-            decimal_places=2
-        )
+    efectivo_inicial = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
     )
 
-    efectivo_final = (
-        serializers.DecimalField(
-            max_digits=10,
-            decimal_places=2,
-            allow_null=True
-        )
+    efectivo_final = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        allow_null=True,
     )
 
-    diferencia = (
-        serializers.DecimalField(
-            max_digits=10,
-            decimal_places=2,
-            allow_null=True
-        )
+    diferencia = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        allow_null=True,
     )
 
 
@@ -191,7 +181,7 @@ class ReporteDevolucionProductoSerializer(
 
     subtotal = serializers.DecimalField(
         max_digits=10,
-        decimal_places=2
+        decimal_places=2,
     )
 
 
@@ -211,17 +201,13 @@ class ReporteDevolucionSerializer(
 
     estado = serializers.CharField()
 
-    total_devuelto = (
-        serializers.DecimalField(
-            max_digits=10,
-            decimal_places=2
-        )
+    total_devuelto = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
     )
 
-    productos = (
-        ReporteDevolucionProductoSerializer(
-            many=True
-        )
+    productos = ReporteDevolucionProductoSerializer(
+        many=True
     )
 
     fecha = serializers.DateTimeField()
@@ -244,7 +230,7 @@ class ReporteGarantiaSerializer(
     variante = serializers.CharField()
 
     variante_nueva = serializers.CharField(
-        allow_null=True
+        allow_null=True,
     )
 
     cantidad = serializers.IntegerField()
@@ -256,18 +242,16 @@ class ReporteGarantiaSerializer(
     estado = serializers.CharField()
 
     resolucion = serializers.CharField(
-        allow_null=True
+        allow_null=True,
     )
 
     observaciones = serializers.CharField(
-        allow_null=True
+        allow_null=True,
     )
 
     fecha = serializers.DateTimeField()
 
-    fecha_actualizacion = (
-        serializers.DateTimeField()
-    )
+    fecha_actualizacion = serializers.DateTimeField()
 
 
 # ============================================================
@@ -286,18 +270,18 @@ class ReporteMovimientoSerializer(
 
     tipo = serializers.CharField()
 
-    stock_anterior = (
-        serializers.IntegerField()
-    )
+    stock_anterior = serializers.IntegerField()
 
     cantidad = serializers.IntegerField()
 
-    stock_nuevo = (
-        serializers.IntegerField()
-    )
+    stock_nuevo = serializers.IntegerField()
+
+    stock_defectuoso_anterior = serializers.IntegerField()
+
+    stock_defectuoso_nuevo = serializers.IntegerField()
 
     observaciones = serializers.CharField(
-        allow_null=True
+        allow_null=True,
     )
 
     usuario = serializers.CharField()
@@ -315,44 +299,38 @@ class ReporteResumenDiaSerializer(
 
     fecha = serializers.DateField()
 
-    cantidad_ventas = (
-        serializers.IntegerField()
-    )
+    cantidad_ventas = serializers.IntegerField()
 
     subtotal = serializers.DecimalField(
         max_digits=12,
-        decimal_places=2
+        decimal_places=2,
     )
 
     descuento = serializers.DecimalField(
         max_digits=12,
-        decimal_places=2
+        decimal_places=2,
     )
 
     iva = serializers.DecimalField(
         max_digits=12,
-        decimal_places=2
+        decimal_places=2,
     )
 
     total_vendido = serializers.DecimalField(
         max_digits=12,
-        decimal_places=2
+        decimal_places=2,
     )
 
     reembolsos = serializers.DecimalField(
         max_digits=12,
-        decimal_places=2
+        decimal_places=2,
     )
 
     venta_neta = serializers.DecimalField(
         max_digits=12,
-        decimal_places=2
+        decimal_places=2,
     )
 
-    metodos_pago = (
-        serializers.DictField()
-    )
+    metodos_pago = serializers.DictField()
 
-    reembolsos_por_metodo = (
-        serializers.DictField()
-    )
+    reembolsos_por_metodo = serializers.DictField()

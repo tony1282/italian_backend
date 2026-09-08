@@ -85,6 +85,7 @@ class EmpresaView(APIView):
 
             registrar_bitacora(
                 usuario=request.user,
+                modulo="Empresa",
                 accion="CREAR_EMPRESA",
                 descripcion="Se creó la configuración de la empresa."
             )
@@ -149,6 +150,7 @@ class EmpresaView(APIView):
 
             registrar_bitacora(
                 usuario=request.user,
+                modulo="Empresa",
                 accion="ACTUALIZAR_EMPRESA",
                 descripcion="Se actualizó la configuración de la empresa."
             )

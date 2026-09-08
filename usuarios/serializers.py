@@ -175,6 +175,8 @@ class UsuarioSerializer(
     ValidacionesUsuarioMixin,
     serializers.ModelSerializer
 ):
+    usuario = serializers.CharField(max_length=50)
+    email = serializers.CharField(max_length=150)
 
     class Meta:
 
@@ -289,6 +291,9 @@ class CrearAdminSerializer(
     ValidacionesUsuarioMixin,
     serializers.ModelSerializer
 ):
+    
+    usuario = serializers.CharField(max_length=50)
+    email = serializers.CharField(max_length=150)
 
     class Meta:
 
