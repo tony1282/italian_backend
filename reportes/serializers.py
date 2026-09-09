@@ -148,23 +148,40 @@ class ReporteCorteSerializer(
     )
 
     efectivo_inicial = serializers.DecimalField(
-        max_digits=10,
+        max_digits=12,
+        decimal_places=2,
+    )
+
+    total_ventas = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+
+    numero_ventas = serializers.IntegerField()
+
+    total_reembolsos = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+
+    efectivo_esperado_actual = serializers.DecimalField(
+        max_digits=12,
         decimal_places=2,
     )
 
     efectivo_final = serializers.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         allow_null=True,
     )
 
     diferencia = serializers.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         allow_null=True,
     )
-
-
+    
+    
 # ============================================================
 # DEVOLUCIONES
 # ============================================================

@@ -17,6 +17,8 @@ from config.exceptions import BusinessException
 from bitacora.services import registrar_bitacora
 
 
+
+
 # ==============================================================
 # VALIDACIONES DE ENTRADA
 # ==============================================================
@@ -302,6 +304,8 @@ def cancelar_venta(venta_id, usuario):
         venta = Venta.objects.select_for_update().get(id=venta_id)
     except (Venta.DoesNotExist, ValueError, TypeError):
         raise BusinessException("La venta no existe.")
+    
+    
 
     if usuario.rol not in (0, 1) and venta.usuario_id != usuario.id:
         raise BusinessException("Solo puedes cancelar tus propias ventas.")
@@ -311,12 +315,28 @@ def cancelar_venta(venta_id, usuario):
 
     if venta.estado == "DEVUELTA":
         raise BusinessException("No se puede cancelar una venta que ya fue devuelta completamente.")
+    
+    if venta.corte_caja.fecha_fin is not None:
+        raise BusinessException(
+            "No se puede cancelar la venta porque el corte de caja ya está cerrado."
+    )
 
     from devoluciones.models import Devolucion
+    from garantias.models import Garantia
+    
+    
     if Devolucion.objects.filter(venta=venta, estado__in=["PENDIENTE", "APROBADA"]).exists():
         raise BusinessException(
             "No se puede cancelar la venta porque tiene una devolución pendiente o aprobada."
         )
+        
+    if Garantia.objects.filter(
+        venta=venta,
+        estado__in=["PENDIENTE", "APROBADA"]
+    ).exists():
+        raise BusinessException(
+            "No se puede cancelar la venta porque tiene una garantía pendiente o aprobada."
+    )
 
     for detalle in venta.detalles.select_related("variante").all():
         variante = Variante.objects.select_for_update().get(id=detalle.variante_id)

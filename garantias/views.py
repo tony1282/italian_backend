@@ -40,15 +40,29 @@ class GarantiaListCreateView(APIView):
 
     # GET /api/garantias/
     def get(self, request):
+        
+        if request.user.rol in (0, 1):
+            garantias = Garantia.objects.select_related(
+                "venta",
+                "detalle_venta",
+                "variante",
+                "variante__producto",
+                "usuario",
+                "variante_nueva"
+            ).all()
 
-        garantias = Garantia.objects.select_related(
-            "venta",
-            "detalle_venta",
-            "variante",
-            "variante__producto",
-            "usuario",
-            "variante_nueva"
-        ).all()
+        else:
+            garantias = Garantia.objects.select_related(
+                 "venta",
+                "detalle_venta",
+                "variante",
+                "variante__producto",
+                "usuario",
+                "variante_nueva"
+            ).filter(
+                usuario=request.user
+            )
+        
 
         paginator = GarantiaPagination()
 
@@ -127,18 +141,24 @@ class GarantiaDetailView(APIView):
 
         try:
 
-            garantia = (
-                Garantia.objects
-                .select_related(
-                    "venta",
-                    "detalle_venta",
-                    "variante",
-                    "variante__producto",
-                    "usuario",
-                    "variante_nueva"
-                )
-                .get(id=id)
+            queryset = Garantia.objects.select_related(
+                "venta",
+                "detalle_venta",
+                "variante",
+                "variante__producto",
+                "usuario",
+                "variante_nueva"
             )
+            
+            if request.user.rol in (0, 1):
+                garantia = queryset.get(
+                    id=id
+                )
+            else:
+                garantia = queryset.get(
+                    id=id,
+                    usuario=request.user
+                )    
 
         except Garantia.DoesNotExist:
 

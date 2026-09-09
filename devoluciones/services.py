@@ -133,7 +133,6 @@ def _disponible_para_devolucion(
             estado__in=[
                 "PENDIENTE",
                 "APROBADA",
-                "FINALIZADA"
             ]
         )
         .aggregate(
@@ -299,7 +298,6 @@ def _validar_cantidades_aprobacion(
                 estado__in=[
                     "PENDIENTE",
                     "APROBADA",
-                    "FINALIZADA"
                 ]
             )
             .aggregate(

@@ -6,6 +6,8 @@ from rest_framework import (
     status
 )
 
+import uuid
+
 from rest_framework.response import Response
 
 from rest_framework.permissions import (
@@ -73,6 +75,16 @@ class VarianteViewSet(
             and user.is_authenticated
             and user.rol in (0, 1)
         )
+        
+        producto_id = self.request.query_params.get(
+            "producto"
+            )
+
+        if producto_id:
+            try:
+                uuid.UUID(producto_id)
+            except ValueError:
+                return Variante.objects.none()
 
         # ------------------------------------------------------
         # PARA MODIFICAR, ACTIVAR O DESACTIVAR
@@ -130,9 +142,6 @@ class VarianteViewSet(
                         )
                     )
 
-                producto_id = self.request.query_params.get(
-                    "producto"
-                )
 
                 if producto_id:
 
@@ -481,6 +490,18 @@ class VarianteViewSet(
                     "data": None
                 },
 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not variante.producto.categoria.activo:
+            return Response(
+                {
+                   "success": False,
+                   "message": (
+                       "No se puede activar la variante"
+                       "porque la categoría de su producto está inactiva"
+                   ),
+                   "data": None 
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 

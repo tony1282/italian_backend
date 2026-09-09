@@ -184,17 +184,30 @@ class VarianteSerializer(
 
             producto = data.get("producto")
 
-            if producto is not None and not producto.activo:
+            if producto is not None:
+                
+                if not producto.activo:
 
-                raise serializers.ValidationError(
-                    {
-                        "producto": (
-                            "No se puede crear una variante "
-                            "activa porque su producto está "
-                            "inactivo."
-                        )
-                    }
-                )
+                    raise serializers.ValidationError(
+                        {
+                            "producto": (
+                                "No se puede asociar una variante "
+                                "a un producto inactivo."
+                            )
+                        }
+                    )
+        
+                if not producto.categoria.activo:
+
+                    raise serializers.ValidationError(
+                        {
+                            "producto": (
+                                "No se puede crear una variante "
+                                "activa porque la categoría de su "
+                                "producto está inactiva."
+                            )
+                        }
+                    )
 
         # ======================================================
         # VALIDAR PRODUCTO ACTIVO — CAMBIO DE PRODUCTO
@@ -208,16 +221,30 @@ class VarianteSerializer(
             if (
                 self.instance.activo
                 and "producto" in data
-                and not data["producto"].activo
             ):
 
-                raise serializers.ValidationError(
-                    {
-                        "producto": (
-                            "No se puede asociar una variante "
-                            "activa a un producto inactivo."
-                        )
-                    }
-                )
+                producto = data["producto"]
+
+                
+                if not producto.activo:
+                    raise serializers.ValidationError(
+                        {
+                            "producto": (
+                                "No se puede asociar una variante "
+                                "activa a un producto inactivo."
+                            )
+                        }
+                    )
+
+                if not producto.categoria.activo:
+                    raise serializers.ValidationError(
+                        {
+                            "producto": (
+                                "No se puede asociar una variante "
+                                "activa a un producto cuya categoría "
+                                "está inactiva."
+                            )
+                        }
+                    )
 
         return data

@@ -59,7 +59,7 @@ def _validar_vigencia(venta, variante):
 def _validar_disponibilidad(detalle_venta, cantidad):
     cantidad_garantizada = (
         Garantia.objects
-        .filter(detalle_venta=detalle_venta, estado__in=["PENDIENTE", "APROBADA", "FINALIZADA"])
+        .filter(detalle_venta=detalle_venta, estado__in=["PENDIENTE", "APROBADA"])
         .aggregate(total=Sum("cantidad"))["total"] or 0
     )
     cantidad_devuelta = (
@@ -96,6 +96,19 @@ def _crear_movimiento(variante, tipo, stock_anterior, cantidad, stock_nuevo,
 
 def _aprobar_reemplazo(garantia, cantidad, usuario):
     variante = Variante.objects.select_for_update().get(id=garantia.variante_id)
+    
+    if not variante.activo:
+        raise BusinessException(
+            "No se puede realizar el reemplazo porque "
+            "la variante original está inactiva." 
+        )
+    
+    if not variante.producto.activo:
+        raise BusinessException(
+            "No se puede realizar el reemplazo porque "
+            "el producto original está inactivo."
+        )
+    
     if variante.stock < cantidad:
         raise BusinessException(
             f"Stock insuficiente para realizar el reemplazo. "
@@ -123,48 +136,168 @@ def _aprobar_reemplazo(garantia, cantidad, usuario):
                       f"Reemplazo por garantía {garantia.id} - salida producto nuevo", usuario)
 
 
-def _aprobar_cambio_producto(garantia, cantidad, data, usuario):
-    variante_nueva_id = data.get("variante_nueva_id")
+def _aprobar_cambio_producto(
+    garantia,
+    cantidad,
+    data,
+    usuario
+):
+    variante_nueva_id = data.get(
+        "variante_nueva_id"
+    )
+
     if not variante_nueva_id:
-        raise BusinessException("Debe especificar la variante nueva.")
-
-    variante_original = Variante.objects.select_for_update().get(id=garantia.variante_id)
-    try:
-        variante_nueva = Variante.objects.select_for_update().get(id=variante_nueva_id)
-    except Variante.DoesNotExist:
-        raise BusinessException("La variante nueva no existe.")
-
-    if variante_original.id == variante_nueva.id:
-        raise BusinessException("La variante nueva debe ser diferente a la variante original.")
-    if variante_nueva.stock < cantidad:
         raise BusinessException(
-            f"Stock insuficiente en la variante nueva para realizar el cambio. "
-            f"Stock disponible: {variante_nueva.stock}. Cantidad requerida: {cantidad}."
+            "Debe especificar la variante nueva."
         )
 
-    # Original defectuoso regresa
+    # ======================================================
+    # OBTENER VARIANTE ORIGINAL
+    # ======================================================
+
+    variante_original = (
+        Variante.objects
+        .select_for_update()
+        .get(
+            id=garantia.variante_id
+        )
+    )
+
+    if not variante_original.activo:
+        raise BusinessException(
+            "No se puede realizar el cambio porque "
+            "la variante original está inactiva."
+        )
+
+    if not variante_original.producto.activo:
+        raise BusinessException(
+            "No se puede realizar el cambio porque "
+            "el producto original está inactivo."
+        )
+
+    # ======================================================
+    # OBTENER VARIANTE NUEVA
+    # ======================================================
+
+    try:
+        variante_nueva = (
+            Variante.objects
+            .select_for_update()
+            .get(
+                id=variante_nueva_id
+            )
+        )
+
+    except Variante.DoesNotExist:
+        raise BusinessException(
+            "La variante nueva no existe."
+        )
+
+    # ======================================================
+    # VALIDAR VARIANTE NUEVA
+    # ======================================================
+
+    if not variante_nueva.activo:
+        raise BusinessException(
+            "No se puede realizar el cambio porque "
+            "la variante nueva está inactiva."
+        )
+
+    if not variante_nueva.producto.activo:
+        raise BusinessException(
+            "No se puede realizar el cambio porque "
+            "el producto de la variante nueva está inactivo."
+        )
+
+    if variante_original.id == variante_nueva.id:
+        raise BusinessException(
+            "La variante nueva debe ser diferente "
+            "a la variante original."
+        )
+
+    if variante_nueva.stock < cantidad:
+        raise BusinessException(
+            f"Stock insuficiente en la variante nueva "
+            f"para realizar el cambio. "
+            f"Stock disponible: {variante_nueva.stock}. "
+            f"Cantidad requerida: {cantidad}."
+        )
+
+    # ======================================================
+    # ORIGINAL DEFECTUOSO REGRESA
+    # ======================================================
+
     stock_orig_ant = variante_original.stock
     stock_orig_def_ant = variante_original.stock_defectuoso
-    stock_orig_def_nuevo = stock_orig_def_ant + cantidad
-    variante_original.stock_defectuoso = stock_orig_def_nuevo
-    variante_original.save(update_fields=["stock", "stock_defectuoso", "fecha_actualizacion"])
-    _crear_movimiento(variante_original, "CAMBIO_PRODUCTO", stock_orig_ant, cantidad, stock_orig_ant,
-                      stock_orig_def_ant, stock_orig_def_nuevo,
-                      f"Cambio de producto por garantía {garantia.id} - entrada producto original defectuoso",
-                      usuario)
+    stock_orig_def_nuevo = (
+        stock_orig_def_ant + cantidad
+    )
 
-    # Nueva variante sale
+    variante_original.stock_defectuoso = (
+        stock_orig_def_nuevo
+    )
+
+    variante_original.save(
+        update_fields=[
+            "stock",
+            "stock_defectuoso",
+            "fecha_actualizacion"
+        ]
+    )
+
+    _crear_movimiento(
+        variante_original,
+        "CAMBIO_PRODUCTO",
+        stock_orig_ant,
+        cantidad,
+        stock_orig_ant,
+        stock_orig_def_ant,
+        stock_orig_def_nuevo,
+        (
+            f"Cambio de producto por garantía "
+            f"{garantia.id} - entrada producto "
+            f"original defectuoso"
+        ),
+        usuario
+    )
+
+    # ======================================================
+    # NUEVA VARIANTE SALE
+    # ======================================================
+
     stock_nueva_ant = variante_nueva.stock
-    stock_nueva_nuevo = stock_nueva_ant - cantidad
-    stock_nueva_def = variante_nueva.stock_defectuoso
+    stock_nueva_nuevo = (
+        stock_nueva_ant - cantidad
+    )
+    stock_nueva_def = (
+        variante_nueva.stock_defectuoso
+    )
+
     variante_nueva.stock = stock_nueva_nuevo
-    variante_nueva.save(update_fields=["stock", "fecha_actualizacion"])
-    _crear_movimiento(variante_nueva, "CAMBIO_PRODUCTO", stock_nueva_ant, cantidad, stock_nueva_nuevo,
-                      stock_nueva_def, stock_nueva_def,
-                      f"Cambio de producto por garantía {garantia.id} - salida producto nuevo", usuario)
+
+    variante_nueva.save(
+        update_fields=[
+            "stock",
+            "fecha_actualizacion"
+        ]
+    )
+
+    _crear_movimiento(
+        variante_nueva,
+        "CAMBIO_PRODUCTO",
+        stock_nueva_ant,
+        cantidad,
+        stock_nueva_nuevo,
+        stock_nueva_def,
+        stock_nueva_def,
+        (
+            f"Cambio de producto por garantía "
+            f"{garantia.id} - salida producto nuevo"
+        ),
+        usuario
+    )
 
     garantia.variante_nueva = variante_nueva
-
 
 # ============================================================
 # CREAR GARANTÍA

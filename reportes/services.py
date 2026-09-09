@@ -199,7 +199,8 @@ def _metodos_dict(
 
 
 def reporte_resumen_dia(
-    fecha=None
+    fecha=None,
+    usuario_id=None,
 ):
 
     if fecha is None:
@@ -215,7 +216,15 @@ def reporte_resumen_dia(
 
     ventas = Venta.objects.filter(
         fecha__date=fecha,
-        estado__in=["COMPLETADA", "DEVUELTA"],
+        estado__in=[
+            "COMPLETADA",
+            "DEVUELTA",
+        ],
+    )
+
+    if usuario_id:
+        ventas = ventas.filter(
+            usuario_id=usuario_id
     )
 
     resumen = ventas.aggregate(
@@ -256,11 +265,18 @@ def reporte_resumen_dia(
         )
     )
 
+    if usuario_id:
+        reembolsos_qs = reembolsos_qs.filter(
+            usuario_id=usuario_id
+        )
+        
     reembolsos = dinero(
         reembolsos_qs.aggregate(
             total=Sum("monto")
-        )["total"]
+    )["total"]
     )
+    
+    
 
     return {
 
@@ -764,9 +780,80 @@ def reporte_cortes(
         fecha_fin,
     )
 
-    return [
+    resultados = []
 
-        {
+    for corte in qs:
+
+        # ====================================================
+        # TODAS LAS VENTAS VÁLIDAS DEL CORTE
+        # ====================================================
+
+        ventas = Venta.objects.filter(
+            corte_caja=corte,
+            estado__in=[
+                "COMPLETADA",
+                "DEVUELTA",
+            ],
+        )
+
+        resumen_ventas = ventas.aggregate(
+            total=Sum("total"),
+            cantidad=Count("id"),
+        )
+
+        total_ventas = dinero(
+            resumen_ventas["total"]
+        )
+
+        numero_ventas = (
+            resumen_ventas["cantidad"]
+            or 0
+        )
+
+        # ====================================================
+        # VENTAS EN EFECTIVO
+        # ====================================================
+
+        ventas_efectivo = ventas.filter(
+            metodo_pago__nombre="EFECTIVO"
+        )
+
+        total_ventas_efectivo = dinero(
+            ventas_efectivo.aggregate(
+                total=Sum("total")
+            )["total"]
+        )
+
+        # ====================================================
+        # REEMBOLSOS EN EFECTIVO
+        # ====================================================
+
+        reembolsos_efectivo = (
+            MovimientoCaja.objects
+            .filter(
+                corte_caja=corte,
+                metodo_pago__nombre="EFECTIVO",
+                tipo="REEMBOLSO",
+            )
+        )
+
+        total_reembolsos = dinero(
+            reembolsos_efectivo.aggregate(
+                total=Sum("monto")
+            )["total"]
+        )
+
+        # ====================================================
+        # EFECTIVO ESPERADO ACTUAL
+        # ====================================================
+
+        efectivo_esperado_actual = dinero(
+            corte.efectivo_inicial
+            + total_ventas_efectivo
+            - total_reembolsos
+        )
+
+        resultados.append({
 
             "id":
                 corte.id,
@@ -790,30 +877,36 @@ def reporte_cortes(
                     corte.efectivo_inicial
                 ),
 
-            "efectivo_final":
-                (
-                    dinero(
-                        corte.efectivo_final
-                    )
-                    if corte.efectivo_final
-                    is not None
-                    else None
-                ),
+            "total_ventas":
+                total_ventas,
 
-            "diferencia":
-                (
-                    dinero(
-                        corte.diferencia
-                    )
-                    if corte.diferencia
-                    is not None
-                    else None
-                ),
-        }
+            "numero_ventas":
+                numero_ventas,
 
-        for corte in qs
-    ]
+            "total_reembolsos":
+                total_reembolsos,
 
+            "efectivo_esperado_actual":
+                efectivo_esperado_actual,
+
+            "efectivo_final": (
+                dinero(
+                    corte.efectivo_final
+                )
+                if corte.efectivo_final is not None
+                else None
+            ),
+
+            "diferencia": (
+                dinero(
+                    corte.diferencia
+                )
+                if corte.diferencia is not None
+                else None
+            ),
+        })
+
+    return resultados
 
 # ============================================================
 # DEVOLUCIONES

@@ -72,7 +72,7 @@ def _construir_mapas(detalle_ids):
             Garantia.objects
             .filter(
                 detalle_venta_id__in=detalle_ids,
-                estado__in=["PENDIENTE", "APROBADA", "FINALIZADA"],
+                estado__in=["PENDIENTE", "APROBADA"],
             )
             .values("detalle_venta_id")
             .annotate(total=Coalesce(Sum("cantidad"), Value(0, output_field=IntegerField())))
@@ -153,11 +153,27 @@ class VentaViewSet(viewsets.ModelViewSet):
     # ==========================================================
 
     def list(self, request, *args, **kwargs):
-        ventas = (
-            Venta.objects
-            .select_related("usuario", "metodo_pago", "corte_caja", "corte_caja__caja")
-            .all()
-        )
+        if request.user.rol in (0, 1):
+            ventas = ( Venta.objects.select_related(
+                "usuario",
+                "metodo_pago",
+                "corte_caja",
+                "corte_caja__caja"
+                ).all()
+            )
+        else:
+            ventas = (
+                Venta.objects.select_related(
+                    "usuario",
+                    "metodo_pago",
+                    "corte_caja",
+                    "corte_caja__caja"
+                ).filter(
+                    usuario=request.user
+                )
+            )    
+        
+       
 
         paginator = VentaPagination()
 
@@ -178,17 +194,37 @@ class VentaViewSet(viewsets.ModelViewSet):
     # ==========================================================
 
     def retrieve(self, request, pk=None):
+        
+        queryset = (Venta.objects.select_related(
+            "usuario",
+            "metodo_pago",
+            "corte_caja",
+            "corte_caja__caja"
+        ).prefetch_related(
+            "detalles__variante__producto"
+        )
+        
+        )
+        
+        
         try:
-            venta = (
-                Venta.objects
-                .select_related("usuario", "metodo_pago", "corte_caja", "corte_caja__caja")
-                .prefetch_related("detalles__variante__producto")
-                .get(pk=pk)
-            )
+            if request.user.rol in (0,1):
+                venta = queryset.get(
+                    pk=pk,
+                )
+            else:
+                venta = queryset.get(
+                    pk=pk,
+                    usuario=request.user
+                )
         except (Venta.DoesNotExist, ValueError, TypeError):
             return Response(
-                {"success": False, "message": "La venta no existe.", "data": None},
-                status=status.HTTP_404_NOT_FOUND,
+                {
+                    "success": False,
+                    "message": "La venta no existe.",
+                    "data": None
+                },
+                status=status.HTTP_404_NOT_FOUND, 
             )
 
         detalle_ids = [d.id for d in venta.detalles.all()]

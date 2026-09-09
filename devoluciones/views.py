@@ -38,8 +38,15 @@ class DevolucionListCreateView(APIView):
     # GET /api/devoluciones/
 
     def get(self, request):
+        
+        if request.user.rol in (0, 1):
+            devoluciones = Devolucion.objects.all()
+        else:
+            devoluciones = Devolucion.objects.filter(
+                usuario=request.user
+            )
 
-        devoluciones = Devolucion.objects.all().order_by(
+        devoluciones = devoluciones.order_by(
             "-fecha"
         )
 
@@ -135,11 +142,17 @@ class DevolucionDetailView(APIView):
     ):
 
         try:
-
-            devolucion = Devolucion.objects.get(
-                id=id
-            )
-
+            
+            if request.user.rol in (0,1):
+                devolucion = Devolucion.objects.get(
+                    id=id
+                )
+            else:
+                devolucion = Devolucion.objects.get(
+                    id=id,
+                    usuario=request.user
+                )
+                
         except Devolucion.DoesNotExist:
 
             return Response(

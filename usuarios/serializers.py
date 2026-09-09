@@ -16,14 +16,6 @@ from rest_framework.exceptions import (
 )
 
 
-# ==========================================================
-# VALIDACIONES COMPARTIDAS (usuario, email, password)
-# ----------------------------------------------------------
-# Extraído a un mixin para no duplicar la lógica —y el bug de
-# la regex de contraseña— entre UsuarioSerializer y
-# CrearAdminSerializer.
-# ==========================================================
-
 class ValidacionesUsuarioMixin:
 
     def validate_password(
@@ -32,39 +24,36 @@ class ValidacionesUsuarioMixin:
     ):
 
         if len(value) < 8:
+
             raise serializers.ValidationError(
                 "La contraseña debe tener al menos 8 caracteres."
             )
 
         if not re.search(r"[A-Z]", value):
+
             raise serializers.ValidationError(
                 "La contraseña debe contener al menos una mayúscula."
             )
 
         if not re.search(r"[a-z]", value):
+
             raise serializers.ValidationError(
                 "La contraseña debe contener al menos una minúscula."
             )
 
         if not re.search(r"\d", value):
+
             raise serializers.ValidationError(
                 "La contraseña debe contener al menos un número."
             )
 
-        # ------------------------------------------------------
-        # Conjunto de caracteres especiales como cadena aparte
-        # (no como literal regex inline) para que la comilla
-        # doble no quede interpretada como cierre del literal
-        # de Python. Antes era:
-        #     r"[!@#$%^&*()_+\-=\[\]{};':""\\|,.<>\/?]"
-        # y el `""` en medio cerraba el string y abría otro,
-        # perdiendo la comilla doble del conjunto de caracteres
-        # especiales sin que Python lanzara ningún error.
-        # ------------------------------------------------------
-
         caracteres_especiales = "!@#$%^&*()_+-=[]{};':\"\\|,.<>/?"
 
-        if not any(c in caracteres_especiales for c in value):
+        if not any(
+            c in caracteres_especiales
+            for c in value
+        ):
+
             raise serializers.ValidationError(
                 "La contraseña debe contener al menos un carácter especial."
             )
@@ -136,10 +125,6 @@ class ValidacionesUsuarioMixin:
         return value
 
 
-# ==========================================================
-# USUARIO — LECTURA
-# ==========================================================
-
 class UsuarioReadSerializer(
     serializers.ModelSerializer
 ):
@@ -167,16 +152,18 @@ class UsuarioReadSerializer(
         ]
 
 
-# ==========================================================
-# USUARIO — ESCRITURA
-# ==========================================================
-
 class UsuarioSerializer(
     ValidacionesUsuarioMixin,
     serializers.ModelSerializer
 ):
-    usuario = serializers.CharField(max_length=50)
-    email = serializers.CharField(max_length=150)
+
+    usuario = serializers.CharField(
+        max_length=50
+    )
+
+    email = serializers.EmailField(
+        max_length=150
+    )
 
     class Meta:
 
@@ -211,22 +198,10 @@ class UsuarioSerializer(
             **kwargs
         )
 
-        # ------------------------------------------------------
-        # La contraseña es obligatoria al crear, pero no debe
-        # serlo en una modificación (PUT o PATCH) de un usuario
-        # existente: si no se envía, simplemente no se cambia.
-        # Sin esto, un PUT completo sin intención de cambiar la
-        # contraseña fallaba exigiéndola de nuevo.
-        # ------------------------------------------------------
-
         if self.instance is not None:
 
             self.fields["password"].required = False
 
-
-    # ======================================================
-    # CREAR USUARIO
-    # ======================================================
 
     def create(
         self,
@@ -248,10 +223,6 @@ class UsuarioSerializer(
             **validated_data
         )
 
-
-    # ======================================================
-    # MODIFICAR USUARIO
-    # ======================================================
 
     def update(
         self,
@@ -283,17 +254,18 @@ class UsuarioSerializer(
         return instance
 
 
-# ==========================================================
-# CREAR ADMINISTRADOR
-# ==========================================================
-
 class CrearAdminSerializer(
     ValidacionesUsuarioMixin,
     serializers.ModelSerializer
 ):
-    
-    usuario = serializers.CharField(max_length=50)
-    email = serializers.CharField(max_length=150)
+
+    usuario = serializers.CharField(
+        max_length=50
+    )
+
+    email = serializers.EmailField(
+        max_length=150
+    )
 
     class Meta:
 
@@ -317,10 +289,6 @@ class CrearAdminSerializer(
         }
 
 
-    # ======================================================
-    # CREAR ADMINISTRADOR
-    # ======================================================
-
     def create(
         self,
         validated_data
@@ -342,10 +310,6 @@ class CrearAdminSerializer(
         )
 
 
-# ==========================================================
-# LOGIN
-# ==========================================================
-
 class LoginSerializer(
     TokenObtainPairSerializer
 ):
@@ -355,17 +319,12 @@ class LoginSerializer(
         attrs
     ):
 
-        usuario_raw = attrs.get("usuario", "") or ""
-        attrs["usuario"] = usuario_raw.strip().lower()
+        usuario_raw = attrs.get(
+            "usuario",
+            ""
+        ) or ""
 
-        # ------------------------------------------------------
-        # VALIDAR CREDENCIALES
-        # --------------------------------------------------
-        # Se valida usuario y contraseña en un solo paso (sin
-        # consultar antes si el usuario existe) para no revelar,
-        # ni por mensaje ni por tiempo de respuesta, si un
-        # nombre de usuario está registrado en el sistema.
-        # ------------------------------------------------------
+        attrs["usuario"] = usuario_raw.strip().lower()
 
         try:
 
@@ -381,23 +340,11 @@ class LoginSerializer(
 
         usuario = self.user
 
-        # ------------------------------------------------------
-        # USUARIO INACTIVO
-        # --------------------------------------------------
-        # Mismo mensaje genérico que credenciales incorrectas,
-        # para no revelar que el usuario existe pero está
-        # desactivado.
-        # ------------------------------------------------------
-
         if not usuario.activo:
 
             raise AuthenticationFailed(
                 "Usuario o contraseña incorrectos."
             )
-
-        # ------------------------------------------------------
-        # RESPUESTA
-        # ------------------------------------------------------
 
         return {
 
@@ -433,9 +380,6 @@ class LoginSerializer(
 
         }
 
-# ==========================================================
-# REFRESH TOKEN
-# ==========================================================
 
 class RefreshSerializer(
     TokenRefreshSerializer
@@ -445,36 +389,69 @@ class RefreshSerializer(
         self,
         attrs
     ):
+
         from rest_framework_simplejwt.tokens import RefreshToken as RT
         from rest_framework_simplejwt.settings import api_settings
         from rest_framework_simplejwt.exceptions import TokenError
 
         try:
-            refresh_obj = RT(attrs["refresh"])
-        except TokenError as e:
-            raise AuthenticationFailed(str(e))
 
-        user_id = refresh_obj.payload.get(api_settings.USER_ID_CLAIM)
+            refresh_obj = RT(
+                attrs["refresh"]
+            )
+
+        except TokenError as e:
+
+            raise AuthenticationFailed(
+                str(e)
+            )
+
+        user_id = refresh_obj.payload.get(
+            api_settings.USER_ID_CLAIM
+        )
 
         try:
-            usuario = Usuario.objects.get(**{api_settings.USER_ID_FIELD: user_id})
+
+            usuario = Usuario.objects.get(
+                **{
+                    api_settings.USER_ID_FIELD: user_id
+                }
+            )
+
         except Usuario.DoesNotExist:
-            raise AuthenticationFailed("Usuario no encontrado.")
+
+            raise AuthenticationFailed(
+                "Usuario no encontrado."
+            )
 
         if not usuario.activo:
-            raise AuthenticationFailed("Este usuario está inactivo.")
 
-        data = super().validate(attrs)
+            raise AuthenticationFailed(
+                "Este usuario está inactivo."
+            )
+
+        data = super().validate(
+            attrs
+        )
 
         response = {
+
             "success": True,
-            "message": "Token actualizado correctamente.",
+
+            "message": (
+                "Token actualizado correctamente."
+            ),
+
             "data": {
+
                 "access": data["access"]
+
             }
+
         }
 
         if "refresh" in data:
+
             response["data"]["refresh"] = data["refresh"]
 
         return response

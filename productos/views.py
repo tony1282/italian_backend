@@ -6,6 +6,7 @@ from rest_framework import (
 )
 
 from rest_framework.response import Response
+from config.exceptions import BusinessException
 
 from rest_framework.permissions import (
     IsAuthenticated
@@ -337,6 +338,12 @@ class ProductoViewSet(
                 },
 
                 status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if not producto.categoria.activo:
+            raise BusinessException(
+                "No se puede activar el producto "
+                "porque su categoría está inactiva."
             )
 
         with transaction.atomic():

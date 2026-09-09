@@ -76,6 +76,10 @@ def abrir_caja(caja_id, efectivo_inicial_raw, usuario):
         raise BusinessException(
             "La caja no existe."
         )
+    if not usuario.activo:
+        raise BusinessException(
+            "El usuario no está activo y no puede abrir la caja"
+        )
 
     # ----------------------------------------------------------
     # VALIDAR QUE LA CAJA ESTÉ ACTIVA
@@ -192,6 +196,21 @@ def cerrar_caja(
 
         raise BusinessException(
             "No existe un corte abierto."
+        )
+        
+    if not usuario.activo:
+        raise BusinessException(
+            "El usuario está inactivo y no puede cerrar la caja."
+        )
+    
+    if not corte.caja.activa:
+        raise BusinessException(
+            "La caja está inactiva y no puede cerrarse."
+        )
+        
+    if corte.caja.estado != Caja.ESTADO_ABIERTA:
+        raise BusinessException(
+            "La caja no se encuentra en estado abierta."
         )
 
     # ----------------------------------------------------------

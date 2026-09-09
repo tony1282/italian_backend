@@ -192,7 +192,7 @@ class BaseReporteView(APIView):
 
 class ReporteResumenDiaView(BaseReporteView):
 
-    permission_classes = PERMISSION_ADMIN
+    permission_classes = PERMISSION_EMPLEADO
 
     def get(self, request):
 
@@ -211,7 +211,12 @@ class ReporteResumenDiaView(BaseReporteView):
                 return error
 
         data = reporte_resumen_dia(
-            fecha=fecha
+            fecha=fecha,
+            usuario_id=(
+                request.user.id
+                if request.user.rol == 2
+                else None
+            ),
         )
 
         return Response(

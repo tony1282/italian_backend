@@ -66,9 +66,13 @@ class ProductoSerializer(
         self,
         value
     ):
+        
+        if value is None:
+            raise serializers.ValidationError(
+                "La categoría es obligatoria."
+            )
 
         if not value.activo:
-
             raise serializers.ValidationError(
                 "No se puede utilizar una categoría inactiva."
             )
@@ -90,6 +94,12 @@ class ProductoSerializer(
 
             raise serializers.ValidationError(
                 "El nombre del producto es obligatorio."
+            )
+            
+        if len(value) > 150:
+            raise serializers.ValidationError(
+                "El nombre del producto no puede superar "
+                "los 150 caracteres."
             )
 
         queryset = Producto.objects.filter(

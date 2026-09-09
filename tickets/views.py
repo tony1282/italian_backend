@@ -8,6 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from .services import generar_ticket
 from .serializers import TicketSerializer
 
+from config.exceptions import BusinessException
+
 from ventas.models import Venta
 from usuarios.permissions import (
     ROL_SUPERADMIN,
@@ -164,9 +166,19 @@ class TicketVentaView(APIView):
         # 4. GENERAR TICKET
         # =========================================================
 
-        data = generar_ticket(
-            venta
-        )
+        try:
+            data = generar_ticket(
+                venta
+            )
+        except BusinessException as e:
+            return Response(
+                {
+                    "success": False,
+                    "message": str(e),
+                    "data": None
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         serializer = TicketSerializer(
             data
