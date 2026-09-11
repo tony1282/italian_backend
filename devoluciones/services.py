@@ -30,8 +30,11 @@ def _redondear(valor):
 # HELPERS CREAR DEVOLUCIÓN
 # ============================================================
 
-def _validar_venta_devolucion(venta_id):
+def _validar_venta_devolucion(venta_id, usuario):
 
+
+
+    
     try:
 
         venta = (
@@ -56,6 +59,11 @@ def _validar_venta_devolucion(venta_id):
 
         raise BusinessException(
             "La venta ya fue devuelta completamente."
+        )
+        
+    if usuario.rol not in (0, 1) and venta.usuario_id != usuario.id:
+        raise BusinessException(
+            "No tienes permisos para devolver esta venta."
         )
 
     return venta
@@ -447,7 +455,8 @@ def crear_devolucion(
 ):
 
     venta = _validar_venta_devolucion(
-        data["venta_id"]
+        data["venta_id"],
+        usuario
     )
 
     _validar_plazo(

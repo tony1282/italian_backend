@@ -18,7 +18,7 @@ from .models import Garantia
 # HELPERS CREAR GARANTÍA
 # ============================================================
 
-def _validar_venta(venta_id):
+def _validar_venta(venta_id, usuario):
     try:
         venta = Venta.objects.select_for_update().get(id=venta_id)
     except Venta.DoesNotExist:
@@ -27,7 +27,14 @@ def _validar_venta(venta_id):
         raise BusinessException("No se puede crear una garantía para una venta cancelada.")
     if venta.estado == "DEVUELTA":
         raise BusinessException("No se puede crear una garantía para una venta devuelta.")
+    if usuario.rol not in (0, 1) and venta.usuario_id != usuario.id:
+        raise BusinessException(
+            "No tienes permisos para crear una garantía sobre esta venta."
+        )
+    
     return venta
+
+    
 
 
 def _validar_detalle_variante(venta, data):
@@ -305,7 +312,7 @@ def _aprobar_cambio_producto(
 
 @transaction.atomic
 def crear_garantia(data, usuario):
-    venta = _validar_venta(data["venta_id"])
+    venta = _validar_venta(data["venta_id"], usuario)
     detalle_venta, variante = _validar_detalle_variante(venta, data)
 
     cantidad = data["cantidad"]

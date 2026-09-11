@@ -885,7 +885,7 @@ def reporte_cortes(
 
             "total_reembolsos":
                 total_reembolsos,
-
+   
             "efectivo_esperado_actual":
                 efectivo_esperado_actual,
 
